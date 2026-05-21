@@ -19,8 +19,13 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       const response = await axios.post(API_URL, { email, password });
-      // Redirect to Home page after successful login
-      navigation.navigate('Home', { user: response.data.user });
+      const { user, token } = response.data;
+      
+      if (user.role === 'admin') {
+        navigation.navigate('AdminDashboard', { user, token });
+      } else {
+        navigation.navigate('Home', { user, token });
+      }
     } catch (error) {
       Alert.alert('Login Failed', error.response?.data?.error || 'Network error');
     } finally {
@@ -32,7 +37,7 @@ export default function LoginScreen({ navigation }) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.brand}>ROSSOMANDI</Text>
-        <Text style={styles.subtitle}>Premium Car Insurance</Text>
+        <Text style={styles.subtitle}>Client Service</Text>
       </View>
 
       <View style={styles.form}>

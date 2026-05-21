@@ -3,5 +3,37 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
+    role VARCHAR(20) DEFAULT 'client',
+    phone VARCHAR(50),
+    address VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS vehicles (
+    id SERIAL PRIMARY KEY,
+    client_id INT REFERENCES users(id) ON DELETE CASCADE,
+    make VARCHAR(100) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    year VARCHAR(10) NOT NULL,
+    license_plate VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS workshop_visits (
+    id SERIAL PRIMARY KEY,
+    client_id INT REFERENCES users(id) ON DELETE CASCADE,
+    vehicle_id INT REFERENCES vehicles(id) ON DELETE SET NULL,
+    visit_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    fixes_performed TEXT NOT NULL,
+    next_instructions TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS documents (
+    id SERIAL PRIMARY KEY,
+    client_id INT REFERENCES users(id) ON DELETE CASCADE,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
