@@ -393,6 +393,29 @@ app.delete('/api/admin/visits/:id', authenticateToken, isAdmin, async (req, res)
   }
 });
 
+// Update workshop visit details
+app.put('/api/admin/visits/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { vehicle_id, visit_date, fixes_performed, next_instructions } = req.body;
+
+    const result = await db.query(
+      'UPDATE workshop_visits SET vehicle_id = $1, visit_date = $2, fixes_performed = $3, next_instructions = $4 WHERE id = $5 RETURNING *',
+      [vehicle_id || null, visit_date || new Date(), fixes_performed, next_instructions || null, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Visit not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+
 // 12. Reset Client Password
 app.post('/api/admin/clients/:id/reset-password', authenticateToken, isAdmin, async (req, res) => {
   try {

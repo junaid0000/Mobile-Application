@@ -11,6 +11,8 @@ export default function HomeScreen({ navigation, route }) {
 
   const [data, setData] = useState({ vehicles: [], visits: [], documents: [] });
   const [loading, setLoading] = useState(true);
+  const [selectedVehicleId, setSelectedVehicleId] = useState('ALL');
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const BASE_URL = Platform.OS === 'web'
     ? 'http://localhost:5000'
@@ -64,11 +66,72 @@ export default function HomeScreen({ navigation, route }) {
         ) : (
           <View style={styles.contentContainer}>
             
-            {/* Vehicles Section */}
+            {/* Vehicle Selector Section */}
+            {data.vehicles.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Select Vehicle</Text>
+                <View style={styles.dropdownContainer}>
+                  <TouchableOpacity 
+                    style={styles.dropdownHeader} 
+                    onPress={() => setShowDropdown(prev => !prev)}
+                  >
+                    <Text style={styles.dropdownHeaderText}>
+                      {selectedVehicleId === 'ALL' 
+                        ? `🚗 Tutti i veicoli (${data.vehicles.length})`
+                        : (() => {
+                            const v = data.vehicles.find(veh => String(veh.id) === String(selectedVehicleId));
+                            return v ? `🚘 ${v.make} ${v.model} (${v.license_plate || 'No Targa'})` : 'Select Vehicle...';
+                          })()
+                      }
+                    </Text>
+                    <Text style={styles.dropdownArrow}>{showDropdown ? '▲' : '▼'}</Text>
+                  </TouchableOpacity>
+                  
+                  {showDropdown && (
+                    <View style={styles.dropdownList}>
+                      <TouchableOpacity
+                        style={[styles.dropdownItem, selectedVehicleId === 'ALL' && styles.dropdownItemActive]}
+                        onPress={() => {
+                          setSelectedVehicleId('ALL');
+                          setShowDropdown(false);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, selectedVehicleId === 'ALL' && styles.dropdownItemTextActive]}>
+                          🚗 Tutti i veicoli ({data.vehicles.length})
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      {data.vehicles.map(v => (
+                        <TouchableOpacity
+                          key={v.id}
+                          style={[styles.dropdownItem, selectedVehicleId === v.id && styles.dropdownItemActive]}
+                          onPress={() => {
+                            setSelectedVehicleId(v.id);
+                            setShowDropdown(false);
+                          }}
+                        >
+                          <Text style={[styles.dropdownItemText, selectedVehicleId === v.id && styles.dropdownItemTextActive]}>
+                            🚘 {v.make} {v.model} {v.license_plate ? `(${v.license_plate})` : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Vehicles Details Card */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>My Vehicles</Text>
-                <View style={styles.badge}><Text style={styles.badgeText}>{data.vehicles.length}</Text></View>
+                <Text style={styles.sectionTitle}>
+                  {selectedVehicleId === 'ALL' ? 'My Vehicles' : 'Vehicle Details'}
+                </Text>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {selectedVehicleId === 'ALL' ? data.vehicles.length : 1}
+                  </Text>
+                </View>
               </View>
               
               {data.vehicles.length === 0 ? (
@@ -76,35 +139,43 @@ export default function HomeScreen({ navigation, route }) {
                   <Text style={styles.emptyStateText}>You have no registered vehicles.</Text>
                 </View>
               ) : (
-                data.vehicles.map((v) => (
-                  <View key={v.id} style={styles.vehicleCard}>
-                    <View style={styles.vehicleIconPlaceholder}>
-                      <Text style={styles.vehicleIconText}>{v.make.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <View style={styles.vehicleInfo}>
-                      <Text style={styles.vehicleTitle}>
-                        <Text style={{color: '#888', fontWeight: 'normal', fontSize: 13, textTransform: 'uppercase'}}>Make:</Text> {v.make}
-                      </Text>
-                      <Text style={styles.vehicleTitle}>
-                        <Text style={{color: '#888', fontWeight: 'normal', fontSize: 13, textTransform: 'uppercase'}}>Model:</Text> {v.model}
-                      </Text>
-                      <Text style={styles.vehicleYear}>Year: {v.year}</Text>
-                    </View>
-                    {v.license_plate ? (
-                      <View style={styles.plateTag}>
-                        <Text style={styles.plateText}>{v.license_plate}</Text>
+                data.vehicles
+                  .filter(v => selectedVehicleId === 'ALL' || String(v.id) === String(selectedVehicleId))
+                  .map((v) => (
+                    <View key={v.id} style={styles.vehicleCard}>
+                      <View style={styles.vehicleIconPlaceholder}>
+                        <Text style={styles.vehicleIconText}>{v.make.charAt(0).toUpperCase()}</Text>
                       </View>
-                    ) : null}
-                  </View>
-                ))
+                      <View style={styles.vehicleInfo}>
+                        <Text style={styles.vehicleTitle}>
+                          <Text style={{color: '#888', fontWeight: 'normal', fontSize: 13, textTransform: 'uppercase'}}>Make:</Text> {v.make}
+                        </Text>
+                        <Text style={styles.vehicleTitle}>
+                          <Text style={{color: '#888', fontWeight: 'normal', fontSize: 13, textTransform: 'uppercase'}}>Model:</Text> {v.model}
+                        </Text>
+                        <Text style={styles.vehicleYear}>Year: {v.year}</Text>
+                      </View>
+                      {v.license_plate ? (
+                        <View style={styles.plateTag}>
+                          <Text style={styles.plateText}>{v.license_plate}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ))
               )}
             </View>
 
-            {/* Service History Section */}
+            {/* Service History Section (Filtered) */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>Service History</Text>
-                <View style={styles.badge}><Text style={styles.badgeText}>{data.visits.length}</Text></View>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {selectedVehicleId === 'ALL' 
+                      ? data.visits.length 
+                      : data.visits.filter(v => String(v.vehicle_id) === String(selectedVehicleId)).length}
+                  </Text>
+                </View>
               </View>
 
               {data.visits.length === 0 ? (
@@ -112,32 +183,50 @@ export default function HomeScreen({ navigation, route }) {
                   <Text style={styles.emptyStateText}>Your service history will appear here.</Text>
                 </View>
               ) : (
-                data.visits.map((v) => {
-                  const vehicle = data.vehicles.find(veh => veh.id === v.vehicle_id);
-                  const carName = vehicle ? `Make: ${vehicle.make} - Model: ${vehicle.model}` : 'Unknown Car';
-                  const visitDate = new Date(v.visit_date);
+                (() => {
+                  const filteredVisits = selectedVehicleId === 'ALL'
+                    ? data.visits
+                    : data.visits.filter(v => String(v.vehicle_id) === String(selectedVehicleId));
                   
-                  return (
-                    <View key={v.id} style={styles.visitCard}>
-                      <View style={styles.visitHeader}>
-                        <Text style={styles.visitDate}>{visitDate.toLocaleDateString()} at {visitDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
-                        <Text style={styles.visitCar}>{carName}</Text>
+                  if (filteredVisits.length === 0) {
+                    return (
+                      <View style={styles.emptyState}>
+                        <Text style={styles.emptyStateText}>No service history for this vehicle.</Text>
                       </View>
-                      
-                      <View style={styles.visitBody}>
-                        <Text style={styles.visitLabel}>Fixes Performed</Text>
-                        <Text style={styles.visitFixes}>{v.fixes_performed}</Text>
+                    );
+                  }
+
+                  return filteredVisits.map((v) => {
+                    const vehicle = data.vehicles.find(veh => String(veh.id) === String(v.vehicle_id));
+                    const carName = vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Car';
+                    const visitDate = new Date(v.visit_date);
+                    
+                    return (
+                      <View key={v.id} style={styles.visitCard}>
+                        <View style={styles.visitHeader}>
+                          <Text style={styles.visitDate}>{visitDate.toLocaleDateString()} at {visitDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
+                          {selectedVehicleId === 'ALL' ? (
+                            <View style={styles.vehicleBadgeMini}>
+                              <Text style={styles.vehicleBadgeMiniText}>{carName}</Text>
+                            </View>
+                          ) : null}
+                        </View>
                         
-                        {v.next_instructions ? (
-                          <View style={styles.instructionsBox}>
-                            <Text style={styles.visitLabelAlert}>Next Instructions</Text>
-                            <Text style={styles.visitInstructions}>{v.next_instructions}</Text>
-                          </View>
-                        ) : null}
+                        <View style={styles.visitBody}>
+                          <Text style={styles.visitLabel}>Fixes Performed</Text>
+                          <Text style={styles.visitFixes}>{v.fixes_performed}</Text>
+                          
+                          {v.next_instructions ? (
+                            <View style={styles.instructionsBox}>
+                              <Text style={styles.visitLabelAlert}>Next Instructions</Text>
+                              <Text style={styles.visitInstructions}>{v.next_instructions}</Text>
+                            </View>
+                          ) : null}
+                        </View>
                       </View>
-                    </View>
-                  );
-                })
+                    );
+                  });
+                })()
               )}
             </View>
 
@@ -462,5 +551,75 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     letterSpacing: 1,
+  },
+  // Dropdown Styles
+  dropdownContainer: {
+    marginTop: 8,
+    position: 'relative',
+    zIndex: 10,
+  },
+  dropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1A1A20',
+    borderWidth: 1,
+    borderColor: '#2A2A35',
+    borderRadius: 12,
+    padding: 16,
+  },
+  dropdownHeaderText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dropdownArrow: {
+    color: '#E53935',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  dropdownList: {
+    marginTop: 8,
+    backgroundColor: '#1E1E26',
+    borderWidth: 1,
+    borderColor: '#2A2A35',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  dropdownItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2A35',
+  },
+  dropdownItemActive: {
+    backgroundColor: 'rgba(229, 57, 53, 0.1)',
+  },
+  dropdownItemText: {
+    color: '#B0B0B0',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  dropdownItemTextActive: {
+    color: '#E53935',
+    fontWeight: 'bold',
+  },
+  // Mini badge for visits
+  vehicleBadgeMini: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  vehicleBadgeMiniText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });

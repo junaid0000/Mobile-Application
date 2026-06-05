@@ -39,6 +39,9 @@ export default function AdminDashboard({ navigation, route }) {
   const [selectedVisit, setSelectedVisit] = useState(null);
   const [vehicleDetailModalVisible, setVehicleDetailModalVisible] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [editVisitModalVisible, setEditVisitModalVisible] = useState(false);
+  const [editingVisit, setEditingVisit] = useState(null);
+  const [editVisitForm, setEditVisitForm] = useState({ vehicle_id: '', visit_date: '', fixes_performed: '', next_instructions: '' });
 
   // Forms state
   const [clientForm, setClientForm] = useState({ name: '', email: '', password: '', phone: '', address: '' });
@@ -200,6 +203,34 @@ export default function AdminDashboard({ navigation, route }) {
       fetchClientRecords(selectedClient.id);
     } catch (error) {
       Alert.alert('Error', 'Failed to delete visit');
+    }
+  };
+
+  const handleStartEditVisit = (visit) => {
+    setEditingVisit(visit);
+    setEditVisitForm({
+      vehicle_id: visit.vehicle_id ? String(visit.vehicle_id) : '',
+      visit_date: visit.visit_date || '',
+      fixes_performed: visit.fixes_performed || '',
+      next_instructions: visit.next_instructions || ''
+    });
+    setEditVisitModalVisible(true);
+  };
+
+  const handleUpdateVisit = async () => {
+    if (!editVisitForm.fixes_performed) {
+      Alert.alert('Error', 'Fixes performed is required');
+      return;
+    }
+    try {
+      await axios.put(`${BASE_URL}/api/admin/visits/${editingVisit.id}`, editVisitForm, apiConfig);
+      Alert.alert('Success', 'Workshop visit details updated successfully');
+      setEditVisitModalVisible(false);
+      setEditingVisit(null);
+      fetchClientRecords(selectedClient.id);
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', error.response?.data?.error || 'Failed to update workshop visit');
     }
   };
 
@@ -425,7 +456,7 @@ export default function AdminDashboard({ navigation, route }) {
                       </TouchableOpacity>
                     </View>
                     {clientRecords.visits && clientRecords.visits.map((v) => {
-                      const vehicle = clientRecords.vehicles.find(veh => veh.id === v.vehicle_id);
+                      const vehicle = clientRecords.vehicles.find(veh => String(veh.id) === String(v.vehicle_id));
                       const carName = vehicle ? `Make: ${vehicle.make} - Model: ${vehicle.model}` : 'Unknown Car';
                       return (
                         <View key={v.id} style={styles.recordItem}>
@@ -435,8 +466,8 @@ export default function AdminDashboard({ navigation, route }) {
                             {v.next_instructions ? <Text style={styles.recordSubText} numberOfLines={1}>Next: {v.next_instructions}</Text> : null}
                           </View>
                           <View style={{ flexDirection: 'row' }}>
-                            <TouchableOpacity style={[styles.deleteRecordButton, { backgroundColor: '#333', marginRight: 5 }]} onPress={() => { setSelectedVisit({...v, carName}); setVisitDetailModalVisible(true); }}>
-                              <Text style={[styles.deleteRecordText, { color: '#FFF' }]}>View</Text>
+                            <TouchableOpacity style={[styles.deleteRecordButton, { backgroundColor: '#FFA000', marginRight: 5 }]} onPress={() => handleStartEditVisit(v)}>
+                              <Text style={[styles.deleteRecordText, { color: '#FFF' }]}>Edit</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.deleteRecordButton} onPress={() => handleDeleteVisit(v.id)}>
                               <Text style={styles.deleteRecordText}>Remove</Text>
@@ -650,25 +681,41 @@ export default function AdminDashboard({ navigation, route }) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add Workshop Visit</Text>
-            
-            <Text style={{color: '#FFF', marginBottom: 5}}>Select Vehicle ID (optional):</Text>
+
+            <Text style={{ color: '#FFF', marginBottom: 5 }}>Select Vehicle *:</Text>
+            {clientRecords.vehicles.length === 0 ? (
+              <Text style={{ color: '#888', fontStyle: 'italic', marginBottom: 15 }}>No registered vehicles. Please add a vehicle first.</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
+                {clientRecords.vehicles.map(v => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[
+                      styles.smallButton,
+                      { 
+                        backgroundColor: String(visitForm.vehicle_id) === String(v.id) ? '#E53935' : '#333', 
+                        marginRight: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8
+                      }
+                    ]}
+                    onPress={() => setVisitForm({ ...visitForm, vehicle_id: v.id })}
+                  >
+                    <Text style={{ color: '#FFF', fontSize: 13, fontWeight: 'bold' }}>{v.make} {v.model}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
             <TextInput
               style={styles.modalInput}
-              placeholder="Vehicle ID from above list"
-              placeholderTextColor="#888"
-              keyboardType="numeric"
-              value={String(visitForm.vehicle_id)}
-              onChangeText={(txt) => setVisitForm({ ...visitForm, vehicle_id: txt })}
-            />
-            
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Visit Date/Time (leave blank for right now)"
+              placeholder="Visit Date/Time (leave blank for now)"
               placeholderTextColor="#888"
               value={visitForm.visit_date}
               onChangeText={(txt) => setVisitForm({ ...visitForm, visit_date: txt })}
             />
-            
+
             <TextInput
               style={[styles.modalInput, { height: 80 }]}
               placeholder="Fixes Performed *"
@@ -677,7 +724,7 @@ export default function AdminDashboard({ navigation, route }) {
               value={visitForm.fixes_performed}
               onChangeText={(txt) => setVisitForm({ ...visitForm, fixes_performed: txt })}
             />
-            
+
             <TextInput
               style={[styles.modalInput, { height: 80 }]}
               placeholder="Next Instructions"
@@ -686,7 +733,7 @@ export default function AdminDashboard({ navigation, route }) {
               value={visitForm.next_instructions}
               onChangeText={(txt) => setVisitForm({ ...visitForm, next_instructions: txt })}
             />
-            
+
             <View style={styles.modalButtonRow}>
               <TouchableOpacity style={[styles.modalButton, { backgroundColor: '#333' }]} onPress={() => setVisitModalVisible(false)}>
                 <Text style={styles.modalButtonText}>Cancel</Text>
@@ -706,22 +753,92 @@ export default function AdminDashboard({ navigation, route }) {
             <Text style={styles.modalTitle}>Workshop Visit Details</Text>
             {selectedVisit && (
               <ScrollView style={{ maxHeight: 400 }}>
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>Date & Time:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 15}}>{new Date(selectedVisit.visit_date).toLocaleString()}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>Date & Time:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 15 }}>{new Date(selectedVisit.visit_date).toLocaleString()}</Text>
 
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>Vehicle:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 15}}>{selectedVisit.carName}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>Vehicle:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 15 }}>{selectedVisit.carName}</Text>
 
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>Fixes Performed:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 15}}>{selectedVisit.fixes_performed}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>Fixes Performed:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 15 }}>{selectedVisit.fixes_performed}</Text>
 
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>Next Instructions:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 20}}>{selectedVisit.next_instructions || 'None'}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>Next Instructions:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 20 }}>{selectedVisit.next_instructions || 'None'}</Text>
               </ScrollView>
             )}
             <View style={styles.modalButtonRow}>
               <TouchableOpacity style={[styles.modalButton, { backgroundColor: '#333' }]} onPress={() => setVisitDetailModalVisible(false)}>
                 <Text style={styles.modalButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Visit Modal */}
+      <Modal animationType="slide" transparent visible={editVisitModalVisible} onRequestClose={() => { setEditVisitModalVisible(false); setEditingVisit(null); }}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Workshop Visit</Text>
+
+            <Text style={{ color: '#FFF', marginBottom: 5 }}>Select Vehicle *:</Text>
+            {clientRecords.vehicles.length === 0 ? (
+              <Text style={{ color: '#888', fontStyle: 'italic', marginBottom: 15 }}>No registered vehicles.</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
+                {clientRecords.vehicles.map(v => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[
+                      styles.smallButton,
+                      { 
+                        backgroundColor: String(editVisitForm.vehicle_id) === String(v.id) ? '#E53935' : '#333', 
+                        marginRight: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8
+                      }
+                    ]}
+                    onPress={() => setEditVisitForm({ ...editVisitForm, vehicle_id: v.id })}
+                  >
+                    <Text style={{ color: '#FFF', fontSize: 13, fontWeight: 'bold' }}>{v.make} {v.model}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Visit Date/Time"
+              placeholderTextColor="#888"
+              value={editVisitForm.visit_date}
+              onChangeText={(txt) => setEditVisitForm({ ...editVisitForm, visit_date: txt })}
+            />
+
+            <TextInput
+              style={[styles.modalInput, { height: 80 }]}
+              placeholder="Fixes Performed *"
+              placeholderTextColor="#888"
+              multiline
+              value={editVisitForm.fixes_performed}
+              onChangeText={(txt) => setEditVisitForm({ ...editVisitForm, fixes_performed: txt })}
+            />
+
+            <TextInput
+              style={[styles.modalInput, { height: 80 }]}
+              placeholder="Next Instructions"
+              placeholderTextColor="#888"
+              multiline
+              value={editVisitForm.next_instructions}
+              onChangeText={(txt) => setEditVisitForm({ ...editVisitForm, next_instructions: txt })}
+            />
+
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity style={[styles.modalButton, { backgroundColor: '#333' }]} onPress={() => { setEditVisitModalVisible(false); setEditingVisit(null); }}>
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, { backgroundColor: '#E53935' }]} onPress={handleUpdateVisit}>
+                <Text style={styles.modalButtonText}>Save Changes</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -735,17 +852,17 @@ export default function AdminDashboard({ navigation, route }) {
             <Text style={styles.modalTitle}>Vehicle Details</Text>
             {selectedVehicle && (
               <ScrollView style={{ maxHeight: 400 }}>
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>Make & Model:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 15}}>{selectedVehicle.make} {selectedVehicle.model}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>Make & Model:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 15 }}>{selectedVehicle.make} {selectedVehicle.model}</Text>
 
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>Year:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 15}}>{selectedVehicle.year}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>Year:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 15 }}>{selectedVehicle.year}</Text>
 
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>License Plate:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 15}}>{selectedVehicle.license_plate || 'N/A'}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>License Plate:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 15 }}>{selectedVehicle.license_plate || 'N/A'}</Text>
 
-                <Text style={{color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5}}>Added On:</Text>
-                <Text style={{color: '#B0B0B0', marginBottom: 20}}>{new Date(selectedVehicle.created_at).toLocaleString()}</Text>
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16, marginBottom: 5 }}>Added On:</Text>
+                <Text style={{ color: '#B0B0B0', marginBottom: 20 }}>{new Date(selectedVehicle.created_at).toLocaleString()}</Text>
               </ScrollView>
             )}
             <View style={styles.modalButtonRow}>
