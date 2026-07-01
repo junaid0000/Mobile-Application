@@ -1,36 +1,186 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Alert, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  Platform,
+  Alert,
+  Dimensions,
+  Modal,
+  Animated,
+  useWindowDimensions,
+} from 'react-native';
 import axios from 'axios';
 import * as WebBrowser from 'expo-web-browser';
 
-const { width } = Dimensions.get('window');
+const BASE_URL = Platform.OS === 'web'
+  ? 'http://localhost:5000'
+  : 'http://192.168.11.251:5000';
 
+// ─── Color Theme ─────────────────────────────────────────────────────────────
+const T = {
+  bg: '#000000',
+  surface: '#161822',
+  surfaceAlt: '#222533',
+  red: '#E53935',
+  yellow: '#FFC107',
+  redLight: 'rgba(229,57,53,0.12)',
+  redBorder: 'rgba(229,57,53,0.3)',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#A0AEC0',
+  textMuted: '#718096',
+  border: '#2A2D3A',
+  shadow: 'rgba(0,0,0,0.4)',
+  green: '#10B981',
+  greenLight: 'rgba(16,185,129,0.12)',
+  amber: '#FFC107',
+  amberLight: 'rgba(255,193,7,0.08)',
+  blue: '#FFC107',
+};
+
+// ─── Side Drawer Component ──────────────────────────────────────────────────
+function SideDrawer({ visible, onClose, userName, userEmail, onLogout }) {
+  const slideAnim = useRef(new Animated.Value(-300)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: -300,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible]);
+
+  const menuItems = [
+    { icon: '🏠', label: 'Dashboard', sub: 'I tuoi veicoli e storico' },
+    { icon: '🚗', label: 'Veicoli', sub: 'Lista ed informazioni' },
+    { icon: '📋', label: 'Storico', sub: 'Interventi ed assistenze' },
+    { icon: '📄', label: 'Documenti', sub: 'Fatture e certificati' },
+    { icon: '📞', label: 'Contattaci', sub: 'Supporto e prenotazioni' },
+    { icon: '⚙️', label: 'Impostazioni', sub: 'Gestisci account' },
+  ];
+
+  if (!visible) return null;
+
+  return (
+    <Modal
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+      animationType="none"
+    >
+      <View style={styles.drawerOverlay}>
+        <Animated.View 
+          style={[styles.drawerBackdrop, { opacity: fadeAnim }]}
+        >
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        </Animated.View>
+
+        <Animated.View 
+          style={[styles.drawerContent, { transform: [{ translateX: slideAnim }] }]}
+        >
+          {/* Drawer Header */}
+          <View style={styles.drawerHeader}>
+            <View style={styles.avatarLarge}>
+              <Text style={styles.avatarLargeText}>
+                {userName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <Text style={styles.drawerName}>{userName}</Text>
+            <Text style={styles.drawerEmail}>{userEmail || 'cliente@rossomandi.it'}</Text>
+          </View>
+
+          {/* Rossomandi Bar */}
+          <View style={styles.drawerBrandStrip}>
+            <Text style={styles.drawerBrandText}>ROSSOMANDI AUTO</Text>
+          </View>
+
+          {/* Drawer Menu Items */}
+          <ScrollView style={styles.drawerMenu} showsVerticalScrollIndicator={false}>
+            {menuItems.map((item, idx) => (
+              <TouchableOpacity key={idx} style={styles.menuItem} onPress={onClose}>
+                <Text style={styles.menuItemIcon}>{item.icon}</Text>
+                <View style={styles.menuItemTextContainer}>
+                  <Text style={styles.menuItemLabel}>{item.label}</Text>
+                  <Text style={styles.menuItemSub}>{item.sub}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Drawer Footer */}
+          <View style={styles.drawerFooter}>
+            <Text style={styles.footerAddress}>📍 Viale G. Marconi, 38/1, Prato</Text>
+            <Text style={styles.footerPhone}>📞 0574 402611</Text>
+            
+            <TouchableOpacity style={styles.drawerLogoutButton} onPress={onLogout}>
+              <Text style={styles.drawerLogoutText}>🚪 Esci dall'account</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Main HomeScreen Component ────────────────────────────────────────────────
 export default function HomeScreen({ navigation, route }) {
   const { user, token } = route.params || {};
-  const userName = user?.name || 'Guest';
+  const userName = user?.name || 'Cliente';
+  const userEmail = user?.email || '';
+
+  const { width } = useWindowDimensions();
+  const isWide = width >= 768;
 
   const [data, setData] = useState({ vehicles: [], visits: [], documents: [] });
   const [loading, setLoading] = useState(true);
-  const [selectedVehicleId, setSelectedVehicleId] = useState('ALL');
-  const [showDropdown, setShowDropdown] = useState(false);
-
-  const BASE_URL = Platform.OS === 'web'
-    ? 'http://localhost:5000'
-    : 'http://192.168.11.251:5000';
+  const [selectedVehicleId, setSelectedVehicleId] = useState(null);
+  
+  // Mobile navigation tabs: 0 = Veicoli list, 1 = Dettagli
+  const [mobileTab, setMobileTab] = useState(0);
+  const [drawerVisible, setDrawerVisible] = useState(false);
 
   useEffect(() => {
     if (token) {
       axios.get(`${BASE_URL}/api/client/dashboard`, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      .then(res => {
-        setData(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+        .then(res => {
+          setData(res.data);
+          if (res.data.vehicles && res.data.vehicles.length > 0) {
+            setSelectedVehicleId(res.data.vehicles[0].id);
+          }
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
     } else {
       setLoading(false);
     }
@@ -41,585 +191,889 @@ export default function HomeScreen({ navigation, route }) {
       const fileUrl = `${BASE_URL}/${filePath}`;
       await WebBrowser.openBrowserAsync(fileUrl);
     } catch (err) {
-      Alert.alert('Error', 'Cannot open document');
+      Alert.alert('Errore', 'Impossibile aprire il documento');
     }
   };
 
-  return (
-    <View style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        
-        {/* Header Section */}
-        <View style={styles.headerContainer}>
-          <Text style={styles.brand}>ROSSOMANDI</Text>
-          <Text style={styles.welcome}>Welcome back,</Text>
-          <Text style={styles.userName}>{userName}</Text>
-          <View style={styles.divider} />
-          <Text style={styles.subtitle}>Your Premium Client Dashboard</Text>
+  const selectedVehicle = data.vehicles.find(v => String(v.id) === String(selectedVehicleId));
+  const filteredVisits = selectedVehicleId
+    ? data.visits.filter(v => String(v.vehicle_id) === String(selectedVehicleId))
+    : data.visits;
+
+  const handleLogout = () => {
+    setDrawerVisible(false);
+    navigation.navigate('Login');
+  };
+
+  // ── LEFT PANEL: Vehicle List (Shared between layouts) ──────────────────────
+  const VehiclePanel = (
+    <View style={[styles.panel, styles.leftPanel, isWide && styles.leftPanelWide]}>
+      <View style={styles.panelHeader}>
+        <Text style={styles.panelTitle}>I Miei Veicoli</Text>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{data.vehicles.length}</Text>
         </View>
+      </View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color="#E53935" size="large" />
-            <Text style={styles.loadingText}>Loading your dashboard...</Text>
-          </View>
-        ) : (
-          <View style={styles.contentContainer}>
-            
-            {/* Vehicle Selector Section */}
-            {data.vehicles.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Select Vehicle</Text>
-                <View style={styles.dropdownContainer}>
-                  <TouchableOpacity 
-                    style={styles.dropdownHeader} 
-                    onPress={() => setShowDropdown(prev => !prev)}
-                  >
-                    <Text style={styles.dropdownHeaderText}>
-                      {selectedVehicleId === 'ALL' 
-                        ? `🚗 Tutti i veicoli (${data.vehicles.length})`
-                        : (() => {
-                            const v = data.vehicles.find(veh => String(veh.id) === String(selectedVehicleId));
-                            return v ? `🚘 ${v.make} ${v.model} (${v.license_plate || 'No Targa'})` : 'Select Vehicle...';
-                          })()
-                      }
-                    </Text>
-                    <Text style={styles.dropdownArrow}>{showDropdown ? '▲' : '▼'}</Text>
-                  </TouchableOpacity>
-                  
-                  {showDropdown && (
-                    <View style={styles.dropdownList}>
-                      <TouchableOpacity
-                        style={[styles.dropdownItem, selectedVehicleId === 'ALL' && styles.dropdownItemActive]}
-                        onPress={() => {
-                          setSelectedVehicleId('ALL');
-                          setShowDropdown(false);
-                        }}
-                      >
-                        <Text style={[styles.dropdownItemText, selectedVehicleId === 'ALL' && styles.dropdownItemTextActive]}>
-                          🚗 Tutti i veicoli ({data.vehicles.length})
-                        </Text>
-                      </TouchableOpacity>
-                      
-                      {data.vehicles.map(v => (
-                        <TouchableOpacity
-                          key={v.id}
-                          style={[styles.dropdownItem, selectedVehicleId === v.id && styles.dropdownItemActive]}
-                          onPress={() => {
-                            setSelectedVehicleId(v.id);
-                            setShowDropdown(false);
-                          }}
-                        >
-                          <Text style={[styles.dropdownItemText, selectedVehicleId === v.id && styles.dropdownItemTextActive]}>
-                            🚘 {v.make} {v.model} {v.license_plate ? `(${v.license_plate})` : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* Vehicles Details Card */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>
-                  {selectedVehicleId === 'ALL' ? 'My Vehicles' : 'Vehicle Details'}
-                </Text>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>
-                    {selectedVehicleId === 'ALL' ? data.vehicles.length : 1}
-                  </Text>
-                </View>
-              </View>
-              
-              {data.vehicles.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>You have no registered vehicles.</Text>
-                </View>
-              ) : (
-                data.vehicles
-                  .filter(v => selectedVehicleId === 'ALL' || String(v.id) === String(selectedVehicleId))
-                  .map((v) => (
-                    <View key={v.id} style={styles.vehicleCard}>
-                      <View style={styles.vehicleIconPlaceholder}>
-                        <Text style={styles.vehicleIconText}>{v.make.charAt(0).toUpperCase()}</Text>
-                      </View>
-                      <View style={styles.vehicleInfo}>
-                        <Text style={styles.vehicleTitle}>
-                          <Text style={{color: '#888', fontWeight: 'normal', fontSize: 13, textTransform: 'uppercase'}}>Make:</Text> {v.make}
-                        </Text>
-                        <Text style={styles.vehicleTitle}>
-                          <Text style={{color: '#888', fontWeight: 'normal', fontSize: 13, textTransform: 'uppercase'}}>Model:</Text> {v.model}
-                        </Text>
-                        <Text style={styles.vehicleYear}>Year: {v.year}</Text>
-                      </View>
-                      {v.license_plate ? (
-                        <View style={styles.plateTag}>
-                          <Text style={styles.plateText}>{v.license_plate}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  ))
-              )}
-            </View>
-
-            {/* Service History Section (Filtered) */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>Service History</Text>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>
-                    {selectedVehicleId === 'ALL' 
-                      ? data.visits.length 
-                      : data.visits.filter(v => String(v.vehicle_id) === String(selectedVehicleId)).length}
-                  </Text>
-                </View>
-              </View>
-
-              {data.visits.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>Your service history will appear here.</Text>
-                </View>
-              ) : (
-                (() => {
-                  const filteredVisits = selectedVehicleId === 'ALL'
-                    ? data.visits
-                    : data.visits.filter(v => String(v.vehicle_id) === String(selectedVehicleId));
-                  
-                  if (filteredVisits.length === 0) {
-                    return (
-                      <View style={styles.emptyState}>
-                        <Text style={styles.emptyStateText}>No service history for this vehicle.</Text>
-                      </View>
-                    );
+      {data.vehicles.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>🚗</Text>
+          <Text style={styles.emptyText}>Nessun veicolo registrato.</Text>
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+          {data.vehicles.map(v => {
+            const isSelected = String(v.id) === String(selectedVehicleId);
+            return (
+              <TouchableOpacity
+                key={v.id}
+                style={[styles.vehicleCard, isSelected && styles.vehicleCardActive]}
+                onPress={() => {
+                  setSelectedVehicleId(v.id);
+                  if (!isWide) {
+                    setMobileTab(1); // Auto switch to details tab on mobile
                   }
+                }}
+              >
+                <View style={[styles.avatarCircle, isSelected && styles.avatarCircleActive]}>
+                  <Text style={[styles.avatarLetter, isSelected && styles.avatarLetterActive]}>
+                    {v.make.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardMake, isSelected && styles.cardMakeActive]}>{v.make}</Text>
+                  <Text style={styles.cardModel}>{v.model}</Text>
+                  <Text style={styles.cardYear}>{v.year}</Text>
+                </View>
+                {v.license_plate ? (
+                  <View style={[styles.plateTag, isSelected && styles.plateTagActive]}>
+                    <Text style={[styles.plateText, isSelected && styles.plateTextActive]}>{v.license_plate}</Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+  );
 
-                  return filteredVisits.map((v) => {
-                    const vehicle = data.vehicles.find(veh => String(veh.id) === String(v.vehicle_id));
-                    const carName = vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Car';
-                    const visitDate = new Date(v.visit_date);
-                    
-                    return (
-                      <View key={v.id} style={styles.visitCard}>
-                        <View style={styles.visitHeader}>
-                          <Text style={styles.visitDate}>{visitDate.toLocaleDateString()} at {visitDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
-                          {selectedVehicleId === 'ALL' ? (
-                            <View style={styles.vehicleBadgeMini}>
-                              <Text style={styles.vehicleBadgeMiniText}>{carName}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                        
-                        <View style={styles.visitBody}>
-                          <Text style={styles.visitLabel}>Fixes Performed</Text>
-                          <Text style={styles.visitFixes}>{v.fixes_performed}</Text>
-                          
-                          {v.next_instructions ? (
-                            <View style={styles.instructionsBox}>
-                              <Text style={styles.visitLabelAlert}>Next Instructions</Text>
-                              <Text style={styles.visitInstructions}>{v.next_instructions}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      </View>
-                    );
-                  });
-                })()
-              )}
-            </View>
-
-            {/* Documents Section */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>My Documents</Text>
-                <View style={styles.badge}><Text style={styles.badgeText}>{data.documents.length}</Text></View>
+  // ── RIGHT PANEL: Details & History (Shared between layouts) ────────────────
+  const DetailsPanel = (
+    <View style={[styles.panel, styles.rightPanel]}>
+      {selectedVehicle ? (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          {/* Active Vehicle Info Header Card */}
+          <View style={styles.infoSummaryCard}>
+            <View style={styles.infoSummaryRow}>
+              <View>
+                <Text style={styles.infoSummaryMake}>{selectedVehicle.make}</Text>
+                <Text style={styles.infoSummaryModel}>{selectedVehicle.model}</Text>
               </View>
-
-              {data.documents.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>Your documents will appear here.</Text>
+              {selectedVehicle.license_plate ? (
+                <View style={styles.plateTagBig}>
+                  <Text style={styles.plateTextBig}>{selectedVehicle.license_plate}</Text>
                 </View>
-              ) : (
-                <View style={styles.documentsGrid}>
-                  {data.documents.map((d) => (
-                    <TouchableOpacity key={d.id} style={styles.documentCard} onPress={() => handleOpenDocument(d.file_path)}>
-                      <View style={styles.docIconPlaceholder}>
-                        <Text style={styles.docIconText}>📄</Text>
-                      </View>
-                      <View style={styles.docInfo}>
-                        <Text style={styles.documentName} numberOfLines={1} ellipsizeMode="tail">{d.file_name}</Text>
-                        <Text style={styles.documentDate}>Added: {new Date(d.uploaded_at).toLocaleDateString()}</Text>
-                      </View>
-                      <Text style={styles.docViewText}>View</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+              ) : null}
             </View>
 
+            <View style={styles.infoDetailsGrid}>
+              <View style={styles.infoDetailItem}>
+                <Text style={styles.detailLabel}>📅 ANNO DI IMMATRICOLAZIONE</Text>
+                <Text style={styles.detailVal}>{selectedVehicle.year || '—'}</Text>
+              </View>
+              <View style={styles.infoDetailItem}>
+                <Text style={styles.detailLabel}>🔑 NUMERO DI TELAIO (VIN)</Text>
+                <Text style={styles.detailVal}>{selectedVehicle.vin || '—'}</Text>
+              </View>
+            </View>
           </View>
-        )}
 
-        <TouchableOpacity style={styles.logoutButton} onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.logoutButtonText}>Log Out</Text>
+          {/* Service History Section */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Storico Interventi</Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{filteredVisits.length}</Text>
+            </View>
+          </View>
+
+          {filteredVisits.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>📋</Text>
+              <Text style={styles.emptyText}>Nessun intervento registrato per questo veicolo.</Text>
+            </View>
+          ) : (
+            <View style={styles.timelineContainer}>
+              <View style={styles.timelineLine} />
+              {filteredVisits.map((visit, index) => {
+                const visitDate = new Date(visit.visit_date);
+                return (
+                  <View key={visit.id} style={styles.timelineItem}>
+                    {/* Timeline Dot */}
+                    <View style={styles.timelineDotContainer}>
+                      <View style={styles.timelineDot} />
+                    </View>
+
+                    {/* Visit Card */}
+                    <View style={styles.visitCard}>
+                      <View style={styles.visitCardHeader}>
+                        <Text style={styles.visitDate}>
+                          📆 {visitDate.toLocaleDateString('it-IT')} ore {visitDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                        <View style={styles.statusBadge}>
+                          <Text style={styles.statusText}>Eseguito</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.visitBody}>
+                        <Text style={styles.visitLabel}>Lavori Eseguiti</Text>
+                        <Text style={styles.visitValue}>{visit.fixes_performed}</Text>
+
+                        {visit.next_instructions ? (
+                          <View style={styles.alertBox}>
+                            <Text style={styles.alertTitle}>💡 NOTE E PROSSIME SCADENZE</Text>
+                            <Text style={styles.alertText}>{visit.next_instructions}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Documents Section */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Documenti Veicolo</Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{data.documents.length}</Text>
+            </View>
+          </View>
+
+          {data.documents.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>📄</Text>
+              <Text style={styles.emptyText}>Nessun documento caricato.</Text>
+            </View>
+          ) : (
+            <View style={styles.docsList}>
+              {data.documents.map(doc => (
+                <TouchableOpacity
+                  key={doc.id}
+                  style={styles.docCard}
+                  onPress={() => handleOpenDocument(doc.file_path)}
+                >
+                  <View style={styles.docIconBox}>
+                    <Text style={styles.docIcon}>📄</Text>
+                  </View>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.docName} numberOfLines={1}>
+                      {doc.file_name}
+                    </Text>
+                    <Text style={styles.docDate}>
+                      Caricato il {new Date(doc.uploaded_at).toLocaleDateString('it-IT')}
+                    </Text>
+                  </View>
+                  <Text style={styles.docActionText}>Apri ↗</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      ) : (
+        <View style={styles.emptyStateCentered}>
+          <Text style={styles.emptyIconLarge}>🚗</Text>
+          <Text style={styles.emptyTextLarge}>Seleziona un veicolo per visualizzarne i dettagli e lo storico.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      {/* ── TOP NAV BAR ──────────────────────────────────────────────────────── */}
+      <View style={styles.topNavbar}>
+        <TouchableOpacity style={styles.navButton} onPress={() => setDrawerVisible(true)}>
+          <Text style={styles.hamburgerText}>☰</Text>
         </TouchableOpacity>
         
-      </ScrollView>
+        <Text style={styles.brandTitle}>ROSSOMANDI</Text>
+        
+        <TouchableOpacity style={styles.profileCircle} onPress={() => setDrawerVisible(true)}>
+          <Text style={styles.profileLetter}>
+            {userName.charAt(0).toUpperCase()}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={T.red} size="large" />
+          <Text style={styles.loadingText}>Caricamento in corso...</Text>
+        </View>
+      ) : (
+        <View style={styles.mainLayout}>
+          {isWide ? (
+            /* ── DESKTOP/TABLET LAYOUT (Side-by-Side) ── */
+            <View style={styles.splitLayout}>
+              {VehiclePanel}
+              <View style={styles.splitDivider} />
+              {DetailsPanel}
+            </View>
+          ) : (
+            /* ── MOBILE LAYOUT (Tabbed Switcher) ── */
+            <View style={{ flex: 1 }}>
+              {/* Custom responsive tab bar */}
+              <View style={styles.tabContainer}>
+                <TouchableOpacity
+                  style={[styles.tabButton, mobileTab === 0 && styles.tabButtonActive]}
+                  onPress={() => setMobileTab(0)}
+                >
+                  <Text style={[styles.tabLabel, mobileTab === 0 && styles.tabLabelActive]}>
+                    🚗 Veicoli ({data.vehicles.length})
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tabButton, mobileTab === 1 && styles.tabButtonActive]}
+                  onPress={() => setMobileTab(1)}
+                >
+                  <Text style={[styles.tabLabel, mobileTab === 1 && styles.tabLabelActive]}>
+                    📋 Dettagli & Storico
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Tab Content Panels */}
+              <View style={{ flex: 1 }}>
+                {mobileTab === 0 ? VehiclePanel : DetailsPanel}
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Slide Drawer Side Menu */}
+      <SideDrawer
+        visible={drawerVisible}
+        onClose={() => setDrawerVisible(false)}
+        userName={userName}
+        userEmail={userEmail}
+        onLogout={handleLogout}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0F0F13',
-  },
   container: {
-    padding: width > 768 ? 40 : 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 40,
-    alignItems: width > 768 ? 'center' : 'stretch',
+    flex: 1,
+    backgroundColor: T.bg,
   },
-  headerContainer: {
-    marginBottom: 30,
-    width: width > 768 ? 700 : '100%',
-  },
-  brand: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#E53935',
-    letterSpacing: 3,
-    marginBottom: 8,
-  },
-  welcome: {
-    fontSize: 24,
-    color: '#B0B0B0',
-    fontWeight: '400',
-  },
-  userName: {
-    fontSize: 32,
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  divider: {
-    height: 3,
-    width: 40,
-    backgroundColor: '#E53935',
-    marginBottom: 12,
-    borderRadius: 2,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#888888',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  loadingText: {
-    color: '#888',
-    marginTop: 16,
-    fontSize: 16,
-  },
-  contentContainer: {
-    width: width > 768 ? 700 : '100%',
-  },
-  section: {
-    marginBottom: 32,
-  },
-  sectionHeaderRow: {
+  topNavbar: {
+    backgroundColor: T.surface,
+    height: Platform.OS === 'ios' ? 95 : 65,
+    paddingTop: Platform.OS === 'ios' ? 45 : 0,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+    zIndex: 100,
   },
-  sectionTitle: {
+  navButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  hamburgerText: {
+    fontSize: 26,
+    color: T.textPrimary,
+  },
+  brandTitle: {
+    color: T.red,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  profileCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: T.redLight,
+    borderWidth: 1.5,
+    borderColor: T.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileLetter: {
+    color: T.red,
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.bg,
+  },
+  loadingText: {
+    color: T.textSecondary,
+    marginTop: 12,
+    fontSize: 15,
+  },
+  mainLayout: {
+    flex: 1,
+  },
+  splitLayout: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: T.bg,
+  },
+  splitDivider: {
+    width: 1,
+    backgroundColor: T.border,
+  },
+  panel: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: T.bg,
+  },
+  leftPanel: {
+    paddingRight: 10,
+  },
+  leftPanelWide: {
+    maxWidth: 340,
+    borderRightWidth: 1,
+    borderRightColor: T.border,
+    backgroundColor: '#0C0D12',
+  },
+  rightPanel: {
+    flex: 2,
+    paddingLeft: 15,
+  },
+  panelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 10,
+  },
+  panelTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginRight: 12,
+    color: T.textPrimary,
   },
   badge: {
-    backgroundColor: 'rgba(229, 57, 53, 0.15)',
+    backgroundColor: T.redLight,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(229, 57, 53, 0.3)',
+    borderColor: T.redBorder,
   },
   badgeText: {
-    color: '#E53935',
+    color: T.red,
     fontSize: 12,
     fontWeight: 'bold',
   },
-  emptyState: {
-    backgroundColor: '#16161A',
-    borderRadius: 12,
-    padding: 30,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#222',
-    borderStyle: 'dashed',
-  },
-  emptyStateText: {
-    color: '#666',
-    fontSize: 14,
-  },
-  // Vehicles
   vehicleCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A20',
+    backgroundColor: T.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#2A2A35',
+    borderColor: T.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  vehicleIconPlaceholder: {
+  vehicleCardActive: {
+    borderColor: T.yellow,
+    backgroundColor: 'rgba(255,193,7,0.05)',
+  },
+  avatarCircle: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: T.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: 14,
   },
-  vehicleIconText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFF',
+  avatarCircleActive: {
+    backgroundColor: T.yellow,
   },
-  vehicleInfo: {
-    flex: 1,
-  },
-  vehicleTitle: {
+  avatarLetter: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 4,
+    color: T.textPrimary,
   },
-  vehicleYear: {
+  avatarLetterActive: {
+    color: '#000000',
+  },
+  cardMake: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: T.textPrimary,
+  },
+  cardMakeActive: {
+    color: T.yellow,
+  },
+  cardModel: {
     fontSize: 14,
-    color: '#888',
+    color: T.textSecondary,
+    marginTop: 2,
+  },
+  cardYear: {
+    fontSize: 12,
+    color: T.textMuted,
+    marginTop: 2,
   },
   plateTag: {
-    backgroundColor: '#E53935',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: T.surfaceAlt,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 6,
   },
+  plateTagActive: {
+    backgroundColor: T.yellow,
+  },
   plateText: {
-    color: '#FFF',
-    fontSize: 12,
+    color: T.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  plateTextActive: {
+    color: '#000000',
+  },
+  infoSummaryCard: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderLeftWidth: 4,
+    borderLeftColor: T.yellow,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  infoSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+    paddingBottom: 15,
+    marginBottom: 15,
+  },
+  infoSummaryMake: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: T.red,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  infoSummaryModel: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: T.textPrimary,
+    marginTop: 4,
+  },
+  plateTagBig: {
+    backgroundColor: T.yellow,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  plateTextBig: {
+    color: '#000000',
+    fontSize: 13,
     fontWeight: 'bold',
     letterSpacing: 1,
   },
-  // Visits
-  visitCard: {
-    backgroundColor: '#1A1A20',
-    borderRadius: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#2A2A35',
-    overflow: 'hidden',
+  infoDetailsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  visitHeader: {
+  infoDetailItem: {
+    flex: 1,
+  },
+  detailLabel: {
+    fontSize: 10,
+    color: T.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  detailVal: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: T.textPrimary,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 15,
+    marginBottom: 15,
+    gap: 10,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: T.textPrimary,
+  },
+  timelineContainer: {
+    position: 'relative',
+    paddingLeft: 16,
+    marginBottom: 10,
+  },
+  timelineLine: {
+    position: 'absolute',
+    left: 7,
+    top: 10,
+    bottom: 10,
+    width: 2,
+    backgroundColor: T.border,
+  },
+  timelineItem: {
+    position: 'relative',
+    marginBottom: 20,
+    paddingLeft: 12,
+  },
+  timelineDotContainer: {
+    position: 'absolute',
+    left: -11,
+    top: 22,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: T.surface,
+    borderWidth: 2,
+    borderColor: T.yellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  timelineDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: T.yellow,
+  },
+  visitCard: {
+    backgroundColor: T.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: T.border,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  visitCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#22222A',
+    backgroundColor: T.surfaceAlt,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#2A2A35',
+    borderBottomColor: T.border,
   },
   visitDate: {
-    color: '#E53935',
-    fontSize: 14,
+    color: T.yellow,
+    fontSize: 13,
     fontWeight: 'bold',
   },
-  visitCar: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
+  statusBadge: {
+    backgroundColor: T.greenLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  statusText: {
+    color: T.green,
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   visitBody: {
     padding: 16,
   },
   visitLabel: {
-    fontSize: 12,
-    color: '#888',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    fontSize: 11,
+    color: T.textMuted,
+    fontWeight: '600',
+    letterSpacing: 0.5,
     marginBottom: 6,
-  },
-  visitFixes: {
-    color: '#E0E0E0',
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 16,
-  },
-  instructionsBox: {
-    backgroundColor: 'rgba(255, 160, 0, 0.05)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#FFA000',
-    padding: 12,
-    borderRadius: 4,
-  },
-  visitLabelAlert: {
-    fontSize: 12,
-    color: '#FFA000',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+  },
+  visitValue: {
+    fontSize: 14,
+    color: T.textPrimary,
+    lineHeight: 20,
+    marginBottom: 15,
+  },
+  alertBox: {
+    backgroundColor: T.amberLight,
+    borderLeftWidth: 3,
+    borderLeftColor: T.amber,
+    padding: 12,
+    borderRadius: 6,
+    marginTop: 5,
+  },
+  alertTitle: {
+    color: T.amber,
+    fontSize: 12,
     fontWeight: 'bold',
     marginBottom: 4,
   },
-  visitInstructions: {
-    color: '#FFF',
-    fontSize: 14,
-    lineHeight: 20,
+  alertText: {
+    color: T.textPrimary,
+    fontSize: 13,
+    lineHeight: 18,
   },
-  // Documents
-  documentsGrid: {
-    flexDirection: 'column',
+  docsList: {
+    gap: 10,
   },
-  documentCard: {
+  docCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A20',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: '#2A2A35',
+    borderColor: T.border,
+    borderRadius: 14,
+    padding: 12,
   },
-  docIconPlaceholder: {
+  docIconBox: {
     width: 40,
     height: 40,
-    borderRadius: 8,
-    backgroundColor: 'rgba(100, 181, 246, 0.1)',
+    borderRadius: 10,
+    backgroundColor: T.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  docIconText: {
-    fontSize: 18,
+  docIcon: {
+    fontSize: 20,
   },
-  docInfo: {
+  docName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: T.textPrimary,
+  },
+  docDate: {
+    fontSize: 12,
+    color: T.textMuted,
+    marginTop: 2,
+  },
+  docActionText: {
+    color: T.yellow,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: T.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  tabButton: {
     flex: 1,
-    marginRight: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  documentName: {
-    color: '#FFF',
-    fontSize: 15,
+  tabButtonActive: {
+    borderBottomColor: T.yellow,
+  },
+  tabLabel: {
+    fontSize: 13,
     fontWeight: '600',
+    color: T.textSecondary,
+  },
+  tabLabelActive: {
+    color: T.yellow,
+    fontWeight: 'bold',
+  },
+  emptyState: {
+    backgroundColor: T.surface,
+    borderRadius: 16,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: T.border,
+    borderStyle: 'dashed',
+  },
+  emptyIcon: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  emptyText: {
+    color: T.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  emptyStateCentered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyIconLarge: {
+    fontSize: 48,
+    marginBottom: 16,
+    opacity: 0.6,
+  },
+  emptyTextLarge: {
+    color: T.textSecondary,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  drawerOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  drawerBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  drawerContent: {
+    width: 280,
+    backgroundColor: '#0F1015',
+    height: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 16,
+  },
+  drawerHeader: {
+    padding: 24,
+    paddingTop: Platform.OS === 'ios' ? 65 : 35,
+    alignItems: 'center',
+    backgroundColor: '#08090C',
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  avatarLarge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: T.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    shadowColor: T.red,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  avatarLargeText: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  drawerName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: T.textPrimary,
+  },
+  drawerEmail: {
+    fontSize: 13,
+    color: T.textSecondary,
+    marginTop: 4,
+  },
+  drawerBrandStrip: {
+    backgroundColor: T.red,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  drawerBrandText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  drawerMenu: {
+    flex: 1,
+    padding: 12,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
     marginBottom: 4,
   },
-  documentDate: {
-    color: '#888',
-    fontSize: 12,
+  menuItemIcon: {
+    fontSize: 20,
+    marginRight: 14,
   },
-  docViewText: {
-    color: '#64B5F6',
+  menuItemTextContainer: {
+    flex: 1,
+  },
+  menuItemLabel: {
     fontSize: 14,
     fontWeight: 'bold',
+    color: T.textPrimary,
   },
-  logoutButton: {
-    alignSelf: width > 768 ? 'center' : 'stretch',
-    width: width > 768 ? 700 : 'auto',
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#E53935',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  logoutButtonText: {
-    color: '#E53935',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  // Dropdown Styles
-  dropdownContainer: {
-    marginTop: 8,
-    position: 'relative',
-    zIndex: 10,
-  },
-  dropdownHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1A1A20',
-    borderWidth: 1,
-    borderColor: '#2A2A35',
-    borderRadius: 12,
-    padding: 16,
-  },
-  dropdownHeaderText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  dropdownArrow: {
-    color: '#E53935',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  dropdownList: {
-    marginTop: 8,
-    backgroundColor: '#1E1E26',
-    borderWidth: 1,
-    borderColor: '#2A2A35',
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  dropdownItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2A2A35',
-  },
-  dropdownItemActive: {
-    backgroundColor: 'rgba(229, 57, 53, 0.1)',
-  },
-  dropdownItemText: {
-    color: '#B0B0B0',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  dropdownItemTextActive: {
-    color: '#E53935',
-    fontWeight: 'bold',
-  },
-  // Mini badge for visits
-  vehicleBadgeMini: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  vehicleBadgeMiniText: {
-    color: '#FFF',
+  menuItemSub: {
     fontSize: 11,
+    color: T.textMuted,
+    marginTop: 2,
+  },
+  drawerFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    backgroundColor: '#08090C',
+  },
+  footerAddress: {
+    fontSize: 11,
+    color: T.textSecondary,
+    marginBottom: 4,
+  },
+  footerPhone: {
+    fontSize: 11,
+    color: T.textSecondary,
+    marginBottom: 16,
+  },
+  drawerLogoutButton: {
+    backgroundColor: T.redLight,
+    borderWidth: 1,
+    borderColor: T.redBorder,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  drawerLogoutText: {
+    color: T.red,
+    fontSize: 13,
     fontWeight: 'bold',
   },
 });

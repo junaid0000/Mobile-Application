@@ -42,6 +42,20 @@ const initDb = async () => {
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'client';`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address VARCHAR(255);`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS venditore_code VARCHAR(10) UNIQUE;`);
+
+    // Create appointments table and index for MS Access sync
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id SERIAL PRIMARY KEY,
+        intorno INTEGER UNIQUE,
+        cliente VARCHAR(255),
+        venditore VARCHAR(50),
+        data_ora TIMESTAMP,
+        last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_appointments_venditore ON appointments(venditore);`);
     
     // Create vehicles table
     await db.query(`
@@ -514,6 +528,83 @@ app.get('/api/client/dashboard', authenticateToken, async (req, res) => {
       visits: visits.rows,
       documents: documents.rows
     });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// GET seller's specific appointments
+app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Fetch user's venditore_code and role
+    const userResult = await db.query('SELECT venditore_code, role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Seller account not found' });
+    }
+
+    const { venditore_code, role } = userResult.rows[0];
+
+    // Ensure the user actually has a seller role or is an admin
+    if (role !== 'seller' && role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied: Only sellers can view appointments' });
+    }
+
+    if (!venditore_code && role !== 'admin') {
+      return res.status(400).json({ error: 'This user account is not linked to a seller code' });
+    }
+
+    // 2. Check if a specific venditore filter was requested via query param
+    const filterVenditore = req.query.venditore;
+
+    // 3. Fetch appointments (If admin, fetch all by default; sellers see their own by default)
+    let queryText = 'SELECT intorno, cliente, venditore, data_ora FROM appointments';
+    let queryParams = [];
+
+    if (filterVenditore) {
+      // Explicit filter requested — both sellers and admins can use this
+      queryText += ' WHERE venditore = $1';
+      queryParams.push(filterVenditore);
+    } else if (role !== 'admin') {
+      // Default for sellers: show only their own
+      queryText += ' WHERE venditore = $1';
+      queryParams.push(venditore_code);
+    }
+    
+    queryText += ' ORDER BY data_ora ASC';
+
+    const appointmentsResult = await db.query(queryText, queryParams);
+
+    res.json({
+      seller_code: venditore_code || 'ADMIN',
+      appointments: appointmentsResult.rows
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// GET distinct seller codes from appointments (for dropdown filter)
+app.get('/api/seller/sellers-list', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Verify user is a seller or admin
+    const userResult = await db.query('SELECT venditore_code, role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { role } = userResult.rows[0];
+    if (role !== 'seller' && role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const result = await db.query('SELECT DISTINCT venditore FROM appointments WHERE venditore IS NOT NULL ORDER BY venditore ASC');
+    res.json({ sellers: result.rows.map(r => r.venditore) });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');

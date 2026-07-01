@@ -43,7 +43,7 @@ export default function SignupScreen({ navigation }) {
       <View style={styles.form}>
         <TextInput
           style={styles.input}
-          placeholder="Full Name"
+          placeholder="Nome e Cognome"
           placeholderTextColor="#B0B0B0"
           value={name}
           onChangeText={setName}
@@ -85,7 +85,7 @@ export default function SignupScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#000000',
     justifyContent: 'center',
     padding: 24,
   },
@@ -102,22 +102,23 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#FFFFFF',
-    opacity: 0.8,
+    color: '#FFC107',
+    opacity: 0.9,
     letterSpacing: 1,
+    fontWeight: '600',
   },
   form: {
     width: '100%',
   },
   input: {
-    backgroundColor: '#1E1E1E',
+    backgroundColor: '#161822',
     color: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#333333',
+    borderColor: '#2A2D3A',
   },
   button: {
     backgroundColor: '#E53935',
@@ -142,11 +143,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   linkText: {
-    color: '#B0B0B0',
+    color: '#A0AEC0',
     fontSize: 15,
   },
   linkHighlight: {
-    color: '#E53935',
+    color: '#FFC107',
     fontWeight: 'bold',
   },
 });

@@ -24,7 +24,7 @@ export default function LoginScreen({ navigation }) {
       if (user.role === 'admin') {
         navigation.navigate('AdminDashboard', { user, token });
       } else {
-        navigation.navigate('Home', { user, token });
+        navigation.navigate('MainTabs', { user, token });
       }
     } catch (error) {
       Alert.alert('Login Failed', error.response?.data?.error || 'Network error');
@@ -78,7 +78,7 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#000000',
     justifyContent: 'center',
     padding: 24,
   },
@@ -95,22 +95,23 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 15,
-    color: '#fcf8f8ff',
-    opacity: 0.8,
+    color: '#FFC107',
+    opacity: 0.9,
     letterSpacing: 1,
+    fontWeight: '600',
   },
   form: {
     width: '100%',
   },
   input: {
-    backgroundColor: '#1E1E1E',
+    backgroundColor: '#161822',
     color: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#333333',
+    borderColor: '#2A2D3A',
   },
   button: {
     backgroundColor: '#E53935',
@@ -135,11 +136,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   linkText: {
-    color: '#B0B0B0',
+    color: '#A0AEC0',
     fontSize: 15,
   },
   linkHighlight: {
-    color: '#E53935',
+    color: '#FFC107',
     fontWeight: 'bold',
   },
 });

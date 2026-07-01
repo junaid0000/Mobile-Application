@@ -5,8 +5,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
-import HomeScreen from './screens/HomeScreen';
 import AdminDashboard from './screens/AdminDashboard';
+import MainTabNavigator from './navigation/MainTabNavigator';
 
 const Stack = createNativeStackNavigator();
 
@@ -14,16 +14,25 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <Stack.Navigator 
+        <Stack.Navigator
           initialRouteName="Login"
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: '#121212' }
+            contentStyle: { backgroundColor: '#0F0F13' },
           }}
         >
+          {/* Auth screens */}
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} />
+
+          {/* Client: 3-tab bottom navigation */}
+          <Stack.Screen
+            name="MainTabs"
+            component={MainTabNavigator}
+            options={{ animation: 'fade' }}
+          />
+
+          {/* Admin: full-screen dashboard (unchanged) */}
           <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
         </Stack.Navigator>
       </NavigationContainer>
