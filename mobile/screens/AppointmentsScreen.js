@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Modal,
   Animated,
   FlatList,
+  Switch,
 } from 'react-native';
 import axios from 'axios';
 
@@ -241,6 +242,7 @@ export default function AppointmentsScreen({ route }) {
   const [sellerCode, setSellerCode] = useState(null); // user's own code
   const [sellersList, setSellersList] = useState([]);
   const [selectedSeller, setSelectedSeller] = useState('__ALL__'); // default depends on role
+  const [filterRecentOnly, setFilterRecentOnly] = useState(true);
 
   // Fetch sellers list for the dropdown
   const fetchSellersList = useCallback(async () => {
@@ -317,16 +319,24 @@ export default function AppointmentsScreen({ route }) {
     setRefreshing(false);
   };
 
-  // Format date for display
-  const formatDate = (dateStr) => {
+  // Helper date formatting functions for line-by-line layout
+  const getDayOfWeek = (dateStr) => {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    return d.toLocaleDateString('it-IT', {
-      weekday: 'short',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
+    const day = d.toLocaleDateString('it-IT', { weekday: 'short' });
+    return day.replace('.', '').toUpperCase(); // Remove dot, uppercase
+  };
+
+  const getDateString = (dateStr) => {
+    if (!dateStr) return 'SENZA';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
+  };
+
+  const getYearString = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.getFullYear().toString();
   };
 
   const formatTime = (dateStr) => {
@@ -335,21 +345,19 @@ export default function AppointmentsScreen({ route }) {
     return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Group appointments by date
-  const groupByDate = (appts) => {
-    const groups = {};
-    appts.forEach((a) => {
-      const key = a.data_ora
-        ? new Date(a.data_ora).toLocaleDateString('it-IT')
-        : 'Senza data';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(a);
-    });
-    return groups;
+  // Get yesterday's date at midnight for comparison
+  const getYesterdayDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    d.setHours(0, 0, 0, 0);
+    return d;
   };
 
-  const grouped = groupByDate(appointments);
-  const dateKeys = Object.keys(grouped);
+  const displayedAppointments = useMemo(() => {
+    if (!filterRecentOnly) return appointments;
+    const yesterday = getYesterdayDate();
+    return appointments.filter(a => a.data_ora && new Date(a.data_ora) >= yesterday);
+  }, [appointments, filterRecentOnly]);
 
   return (
     <View style={s.container}>
@@ -361,7 +369,7 @@ export default function AppointmentsScreen({ route }) {
         </View>
         <View style={s.statsChip}>
           <Text style={s.statsChipText}>
-            📅 {appointments.length}
+            📅 {displayedAppointments.length}
           </Text>
         </View>
       </View>
@@ -387,80 +395,77 @@ export default function AppointmentsScreen({ route }) {
           onSelect={handleSelectSeller}
           userSellerCode={sellerCode}
         />
+        {/* Segmented Filter Control */}
+        <View style={s.filterRow}>
+          <Text style={s.filterLabel}>Solo Recenti (Ieri + Oggi + Futuri)</Text>
+          <Switch
+            value={filterRecentOnly}
+            onValueChange={setFilterRecentOnly}
+            trackColor={{ false: T.border, true: T.yellow }}
+            thumbColor={filterRecentOnly ? T.yellow : T.textSecondary}
+          />
+        </View>
 
         {loading ? (
           <View style={s.loadingBox}>
             <ActivityIndicator color={T.red} size="large" />
             <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
           </View>
-        ) : appointments.length === 0 ? (
+        ) : displayedAppointments.length === 0 ? (
           /* Empty State */
           <View style={s.emptyState}>
             <View style={s.emptyIconCircle}>
               <Text style={s.emptyIcon}>📅</Text>
             </View>
             <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
-            <Text style={s.emptySubtitle}>
-              Non ci sono appuntamenti{'\n'}per il venditore selezionato.
-            </Text>
+            {filterRecentOnly ? (
+              <Text style={s.emptySubtitle}>
+                Non ci sono appuntamenti da ieri in poi.{"\n"}
+                Spegni il filtro temporale sopra per vedere lo storico.
+              </Text>
+            ) : (
+              <Text style={s.emptySubtitle}>
+                Non ci sono appuntamenti per il venditore selezionato.
+              </Text>
+            )}
           </View>
         ) : (
-          /* Appointment Cards Grouped by Date */
-          dateKeys.map((dateKey) => (
-            <View key={dateKey} style={s.dateGroup}>
-              {/* Date Header */}
-              <View style={s.dateHeader}>
-                <View style={s.dateHeaderDot} />
-                <Text style={s.dateHeaderText}>{dateKey}</Text>
-                <View style={s.dateHeaderLine} />
-                <View style={s.dateCountBadge}>
-                  <Text style={s.dateCountText}>{grouped[dateKey].length}</Text>
-                </View>
+          /* Line by Line Appointment list */
+          displayedAppointments.map((appt, idx) => (
+            <View key={`${appt.intorno}-${idx}`} style={s.lineItem}>
+              {/* Left: Day, Date & Year Block */}
+              <View style={s.dateBlock}>
+                <Text style={s.dayText}>{getDayOfWeek(appt.data_ora)}</Text>
+                <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
+                <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
               </View>
 
-              {/* Cards for this date */}
-              {grouped[dateKey].map((appt, idx) => (
-                <View key={`${appt.intorno}-${idx}`} style={s.card}>
-                  {/* Card left accent */}
-                  <View style={s.cardAccent} />
-
-                  <View style={s.cardBody}>
-                    {/* Top row: Code + Time */}
-                    <View style={s.cardTopRow}>
-                      <View style={s.codeBadge}>
-                        <Text style={s.codeText}>#{appt.intorno}</Text>
-                      </View>
-                      {appt.data_ora && (
-                        <View style={s.timeBadge}>
-                          <Text style={s.timeText}>
-                            🕐 {formatTime(appt.data_ora)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Client name */}
-                    <Text style={s.clientName}>
-                      {appt.cliente || 'Cliente sconosciuto'}
-                    </Text>
-
-                    {/* Bottom row: Seller */}
-                    <View style={s.cardBottomRow}>
-                      <View style={s.sellerTag}>
-                        <Text style={s.sellerTagIcon}>👤</Text>
-                        <Text style={s.sellerTagText}>
-                          {appt.venditore || '—'}
-                        </Text>
-                      </View>
-                      {appt.venditore === sellerCode && (
-                        <View style={s.youBadge}>
-                          <Text style={s.youBadgeText}>TU</Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
+              {/* Middle: Details Row */}
+              <View style={s.mainBlock}>
+                <View style={s.timeRow}>
+                  <Text style={s.timeText}>
+                    🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
+                  </Text>
                 </View>
-              ))}
+                <Text style={s.clientText} numberOfLines={1}>
+                  {appt.cliente || 'Cliente Sconosciuto'}
+                </Text>
+                <Text style={s.placeText} numberOfLines={1}>
+                  📍 {appt.luogo || 'Sede non specificata'}
+                </Text>
+              </View>
+
+              {/* Right: Badge Meta */}
+              <View style={s.rightBlock}>
+                <View style={s.codeBadgeSmall}>
+                  <Text style={s.codeTextSmall}>#{appt.intorno}</Text>
+                </View>
+                {appt.venditore && (
+                  <View style={s.sellerBadgeSmall}>
+                    <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
+                  </View>
+                )}
+              </View>
             </View>
           ))
         )}
@@ -570,139 +575,116 @@ const s = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Date Groups
-  dateGroup: {
-    marginBottom: 20,
-  },
-  dateHeader: {
+  // Tab Bar Selector
+  // Filter Row
+  filterRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 10,
+    backgroundColor: T.surface,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: T.border,
   },
-  dateHeaderDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: T.yellow,
-  },
-  dateHeaderText: {
+  filterLabel: {
     color: T.textPrimary,
     fontSize: 14,
     fontWeight: '700',
-    textTransform: 'capitalize',
-  },
-  dateHeaderLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: T.border,
-  },
-  dateCountBadge: {
-    backgroundColor: T.redLight,
-    borderWidth: 1,
-    borderColor: T.redBorder,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  dateCountText: {
-    color: T.red,
-    fontSize: 11,
-    fontWeight: 'bold',
   },
 
-  // Appointment Card
-  card: {
+  // Line Item Layout
+  lineItem: {
     flexDirection: 'row',
     backgroundColor: T.surface,
-    borderRadius: 16,
-    marginBottom: 10,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: T.border,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  cardAccent: {
-    width: 4,
-    backgroundColor: T.yellow,
-  },
-  cardBody: {
-    flex: 1,
-    padding: 16,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
   },
-  codeBadge: {
-    backgroundColor: T.amberLight,
-    borderWidth: 1,
-    borderColor: 'rgba(255,193,7,0.2)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  dateBlock: {
+    width: 75,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: T.border,
+    paddingRight: 10,
   },
-  codeText: {
+  dayText: {
+    color: T.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  dateText: {
     color: T.yellow,
     fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    textAlign: 'center',
   },
-  timeBadge: {
-    backgroundColor: T.surfaceAlt,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  yearText: {
+    color: T.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  mainBlock: {
+    flex: 1,
+    paddingHorizontal: 12,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
   },
   timeText: {
-    color: T.textSecondary,
-    fontSize: 12,
+    color: T.textMuted,
+    fontSize: 11,
     fontWeight: '600',
   },
-  clientName: {
+  clientText: {
     color: T.textPrimary,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '700',
-    marginBottom: 10,
+    marginBottom: 4,
   },
-  cardBottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sellerTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: T.surfaceAlt,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  sellerTagIcon: {
-    fontSize: 13,
-  },
-  sellerTagText: {
+  placeText: {
     color: T.textSecondary,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  youBadge: {
-    backgroundColor: T.greenLight,
+  rightBlock: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  codeBadgeSmall: {
+    backgroundColor: T.amberLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255,193,7,0.15)',
     borderRadius: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 3,
   },
-  youBadgeText: {
-    color: T.green,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  codeTextSmall: {
+    color: T.yellow,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  sellerBadgeSmall: {
+    backgroundColor: T.surfaceAlt,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  sellerTextSmall: {
+    color: T.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

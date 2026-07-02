@@ -3,14 +3,19 @@ import psycopg2
 from psycopg2.extras import execute_values
 import time
 import os
-import glob
+import shutil
+import socket
+import threading
 
 # --- CONFIGURATION ---
-# Folder where MS Access files are stored
-ACCESS_DIR = r"C:\Users\Public\Desktop\Strumenti"
+# Network UNC path to the live backend database on the server
+BACKEND_NETWORK_PATH = r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb"
 
-# PostgreSQL credentials (pre-configured from your local .env file)
-PG_HOST = "localhost" 
+# Local fallback path to the backend database (for development or local testing)
+BACKEND_LOCAL_PATH   = r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb"
+
+# PostgreSQL credentials
+PG_HOST = "127.0.0.1" 
 PG_PORT = "5432"
 PG_DATABASE = "postgres"
 PG_USER = "postgres"
@@ -18,121 +23,190 @@ PG_PASSWORD = "postgres"
 
 PG_CONN_STR = f"host={PG_HOST} port={PG_PORT} dbname={PG_DATABASE} user={PG_USER} password={PG_PASSWORD}"
 
-import re
+def check_network_host(host, port=445, timeout=1.0):
+    """Performs a quick socket connection check to prevent network hang/blocking."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
-def get_version(filename):
-    """Extracts the version number (e.g. 12.44) from the filename to sort correctly."""
-    match = re.search(r'(\d+\.\d+)', filename)
-    if match:
+def exists_with_timeout(path, timeout=1.5):
+    """Checks if a path exists using a background thread to prevent infinite OS blocking on UNC network paths."""
+    res = [False]
+    def worker():
         try:
-            return float(match.group(1))
-        except ValueError:
+            res[0] = os.path.exists(path)
+        except Exception:
             pass
-    return 0.0
+    t = threading.Thread(target=worker)
+    t.daemon = True
+    t.start()
+    t.join(timeout)
+    return res[0]
 
-def get_latest_access_db(directory):
-    """Finds the file with the highest version number matching 'HubOrganizer *.accdb' in the directory."""
-    if not os.path.exists(directory):
-        print(f"Warning: Directory {directory} does not exist yet. Please make sure the path is correct.")
-        return None
-        
-    pattern = os.path.join(directory, "HubOrganizer *.accdb")
-    files = glob.glob(pattern)
-    if not files:
-        # Fallback to any .accdb in the directory if the name changes completely
-        files = glob.glob(os.path.join(directory, "*.accdb"))
-        
-    if not files:
-        return None
-        
-    # Exclude files containing 'bkp', 'backup', 'copy', or 'copia' (case-insensitive)
-    files = [f for f in files if not any(x in os.path.basename(f).lower() for x in ['bkp', 'backup', 'copy', 'copia'])]
-    
-    if not files:
-        return None
-        
-    # Sort files by version number (highest version first)
-    files.sort(key=lambda f: get_version(os.path.basename(f)), reverse=True)
-    return files[0]
+def resolve_source_db():
+    """Resolves whether to read from the live server backend or the local backup file."""
+    # 1. Quick connection check to server host on port 445
+    if check_network_host("192.168.12.250", port=445, timeout=1.0):
+        # 2. Check if the backend UNC share is available
+        if exists_with_timeout(BACKEND_NETWORK_PATH, timeout=1.5):
+            return BACKEND_NETWORK_PATH
+            
+    return BACKEND_LOCAL_PATH
 
 def fetch_access_data(db_path):
-    """Reads data from the specified MS Access database file."""
-    # Connect in read-only mode to prevent database locks or accidental updates
-    conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={db_path};ReadOnly=1;"
-    conn = None
+    """Reads data from the specified MS Access database file by copying it locally first."""
+    temp_path = os.path.abspath("temp_sync.accdb")
+    
     try:
+        # Copy file locally to prevent locks and network latency issues
+        shutil.copy2(db_path, temp_path)
+    except Exception as copy_err:
+        print(f"Error copying Access DB to temp file: {copy_err}")
+        return []
+        
+    conn = None
+    cursor = None
+    try:
+        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={temp_path};ReadOnly=1;"
         conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = conn.cursor()
         
-        # Query columns from the Database1 table in MS Access
-        # Replace 'Inizio' or other fields if you decide to change column mapping
-        # Here we attempt to fetch data. In MS Access, dates are usually dates, we read them directly.
-        query = """
-            SELECT Intorno, Cliente, Venditore, [inizio .g]
-            FROM [Database1]
-            WHERE Intorno IS NOT NULL;
-        """
+        # Try querying with [Sede], [Data fatturazione CE], [Testo3]
+        has_sede = False
         try:
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            
-            data = []
-            for row in rows:
-                intorno = row.Intorno
-                cliente = row.Cliente.strip() if row.Cliente else None
-                venditore = row.Venditore.strip() if row.Venditore else None
-                data_ora = row[3]  # This is the date column (e.g. inizio .g)
-                
-                data.append((intorno, cliente, venditore, data_ora))
-            return data
-        except Exception as query_err:
-            print(f"Error querying table with [inizio .g]: {query_err}")
-            print("Attempting fallback query without [inizio .g] column...")
-            fallback_query = """
-                SELECT Intorno, Cliente, Venditore
+            query = """
+                SELECT Interno, Cliente, Venditore, [Data contratto], [indirizzo], [Residente a], [Sede], [Data fatturazione CE], [Testo3]
                 FROM [Database1]
-                WHERE Intorno IS NOT NULL;
+                WHERE Interno IS NOT NULL;
             """
-            cursor.execute(fallback_query)
-            rows = cursor.fetchall()
-            data = []
-            for row in rows:
-                intorno = row.Intorno
-                cliente = row.Cliente.strip() if row.Cliente else None
-                venditore = row.Venditore.strip() if row.Venditore else None
-                data.append((intorno, cliente, venditore, None))
-            return data
+            cursor.execute(query)
+            has_sede = True
+        except Exception:
+            query = """
+                SELECT Interno, Cliente, Venditore, [Data contratto], [indirizzo], [Residente a], [Data fatturazione CE], [Testo3]
+                FROM [Database1]
+                WHERE Interno IS NOT NULL;
+            """
+            cursor.execute(query)
+            has_sede = False
+            
+        rows = cursor.fetchall()
+        
+        data = []
+        for row in rows:
+            # Interno is the ID, map it to string
+            interno = str(row[0]).strip() if row[0] is not None else None
+            cliente = row[1].strip() if row[1] else None
+            venditore = row[2].strip() if row[2] else None
+            
+            # Combine Sede, address and city for luogo (place of appointment)
+            address = row[4].strip() if row[4] else ""
+            city = row[5].strip() if row[5] else ""
+            
+            if has_sede:
+                sede = row[6].strip() if row[6] else ""
+                date_val = row[7] if row[7] is not None else row[3]
+                time_str = str(row[8]).strip() if row[8] is not None else ""
+            else:
+                sede = ""
+                date_val = row[6] if row[6] is not None else row[3]
+                time_str = str(row[7]).strip() if row[7] is not None else ""
+                
+            parts = [p for p in [sede, address, city] if p]
+            luogo = " - ".join(parts) if parts else None
+            
+            # Combine Date and Time into data_ora
+            data_ora = None
+            if date_val:
+                from datetime import datetime
+                if isinstance(date_val, datetime):
+                    dt = date_val
+                else:
+                    try:
+                        dt = datetime.strptime(str(date_val), '%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        dt = None
+                        
+                if dt:
+                    hour, minute = 0, 0
+                    if time_str:
+                        # Extract start time if a range is provided (e.g., '12:00 - 13:00' -> '12:00')
+                        start_time = time_str.split('-')[0].split('to')[0].split('a')[0].strip()
+                        cleaned_time = start_time.replace('.', ':').replace(' ', '')
+                        try:
+                            if ':' in cleaned_time:
+                                t_parts = cleaned_time.split(':')
+                                hour = int(t_parts[0])
+                                minute = int(t_parts[1]) if len(t_parts) > 1 else 0
+                            else:
+                                hour = int(cleaned_time)
+                        except ValueError:
+                            pass
+                    try:
+                        data_ora = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                    except ValueError:
+                        data_ora = dt
+            
+            data.append((interno, cliente, venditore, data_ora, luogo))
+        return data
     except Exception as e:
         print(f"Error connecting or reading Access DB ({os.path.basename(db_path)}): {e}")
         return []
     finally:
         if conn:
-            conn.close()
+            try:
+                if cursor:
+                    cursor.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        # Give the OS a split second to release file handles
+        time.sleep(0.5)
+        # Clean up the temporary file
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as rm_err:
+                print(f"Warning: Could not remove temporary file {temp_path}: {rm_err}")
 
 def upsert_to_postgresql(data):
     """Inserts new or updates existing records in PostgreSQL."""
     if not data:
         return
         
+    # Deduplicate data by intorno (first element of tuple) to avoid postgres ON CONFLICT error
+    dedup_dict = {}
+    for item in data:
+        intorno = item[0]
+        if intorno:
+            dedup_dict[intorno] = item
+    deduplicated_data = list(dedup_dict.values())
+    
     pg_conn = None
     try:
         pg_conn = psycopg2.connect(PG_CONN_STR)
         cursor = pg_conn.cursor()
         
         upsert_query = """
-            INSERT INTO public.appointments (intorno, cliente, venditore, data_ora)
+            INSERT INTO public.appointments (intorno, cliente, venditore, data_ora, luogo)
             VALUES %s
             ON CONFLICT (intorno) 
             DO UPDATE SET 
                 cliente = EXCLUDED.cliente,
                 venditore = EXCLUDED.venditore,
                 data_ora = EXCLUDED.data_ora,
+                luogo = EXCLUDED.luogo,
                 last_sync = CURRENT_TIMESTAMP;
         """
         
-        execute_values(cursor, upsert_query, data)
+        execute_values(cursor, upsert_query, deduplicated_data)
         pg_conn.commit()
-        print(f"Successfully synced {len(data)} records to PostgreSQL.")
+        print(f"Successfully synced {len(deduplicated_data)} unique records to PostgreSQL.")
     except Exception as e:
         print(f"Error writing to PostgreSQL: {e}")
         if pg_conn:
@@ -142,26 +216,27 @@ def upsert_to_postgresql(data):
             pg_conn.close()
 
 def main():
-    print("MS Access Sync Service started.")
-    last_processed_file = None
+    print("MS Access Backend Sync Service started.")
+    last_mtime = None
     
     while True:
         try:
-            latest_db = get_latest_access_db(ACCESS_DIR)
-            if not latest_db:
-                print(f"Warning: No MS Access file found in {ACCESS_DIR}. Check directory path.")
+            db_path = resolve_source_db()
+            if os.path.exists(db_path):
+                # Check file modification time to see if it changed
+                mtime = os.path.getmtime(db_path)
+                if mtime != last_mtime:
+                    print(f"Syncing backend database file: {db_path}")
+                    last_mtime = mtime
+                    
+                    data = fetch_access_data(db_path)
+                    if data:
+                        upsert_to_postgresql(data)
             else:
-                if latest_db != last_processed_file:
-                    print(f"Newer or updated database file detected: {os.path.basename(latest_db)}")
-                    last_processed_file = latest_db
-                
-                data = fetch_access_data(latest_db)
-                if data:
-                    upsert_to_postgresql(data)
-                
+                print(f"Warning: Access file not found at {db_path}.")
         except Exception as e:
             print(f"Sync loop error: {e}")
-        
+            
         # Check for updates every 30 seconds
         time.sleep(30)
 

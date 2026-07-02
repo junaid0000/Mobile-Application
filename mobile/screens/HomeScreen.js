@@ -164,6 +164,8 @@ export default function HomeScreen({ navigation, route }) {
   // Mobile navigation tabs: 0 = Veicoli list, 1 = Dettagli
   const [mobileTab, setMobileTab] = useState(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [hoveredVehicleId, setHoveredVehicleId] = useState(null);
+  const [hoveredDocId, setHoveredDocId] = useState(null);
 
   useEffect(() => {
     if (token) {
@@ -224,10 +226,17 @@ export default function HomeScreen({ navigation, route }) {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
           {data.vehicles.map(v => {
             const isSelected = String(v.id) === String(selectedVehicleId);
+            const isHovered = String(v.id) === String(hoveredVehicleId);
             return (
               <TouchableOpacity
                 key={v.id}
-                style={[styles.vehicleCard, isSelected && styles.vehicleCardActive]}
+                onMouseEnter={() => setHoveredVehicleId(v.id)}
+                onMouseLeave={() => setHoveredVehicleId(null)}
+                style={[
+                  styles.vehicleCard,
+                  isSelected && styles.vehicleCardActive,
+                  isHovered && styles.vehicleCardHover,
+                ]}
                 onPress={() => {
                   setSelectedVehicleId(v.id);
                   if (!isWide) {
@@ -235,19 +244,39 @@ export default function HomeScreen({ navigation, route }) {
                   }
                 }}
               >
-                <View style={[styles.avatarCircle, isSelected && styles.avatarCircleActive]}>
-                  <Text style={[styles.avatarLetter, isSelected && styles.avatarLetterActive]}>
+                <View style={[
+                  styles.avatarCircle,
+                  isSelected && styles.avatarCircleActive,
+                  isHovered && styles.avatarCircleHover,
+                ]}>
+                  <Text style={[
+                    styles.avatarLetter,
+                    isSelected && styles.avatarLetterActive,
+                    isHovered && styles.avatarLetterHover,
+                  ]}>
                     {v.make.charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.cardMake, isSelected && styles.cardMakeActive]}>{v.make}</Text>
+                  <Text style={[
+                    styles.cardMake,
+                    isSelected && styles.cardMakeActive,
+                    isHovered && styles.cardMakeHover,
+                  ]}>{v.make}</Text>
                   <Text style={styles.cardModel}>{v.model}</Text>
                   <Text style={styles.cardYear}>{v.year}</Text>
                 </View>
                 {v.license_plate ? (
-                  <View style={[styles.plateTag, isSelected && styles.plateTagActive]}>
-                    <Text style={[styles.plateText, isSelected && styles.plateTextActive]}>{v.license_plate}</Text>
+                  <View style={[
+                    styles.plateTag,
+                    isSelected && styles.plateTagActive,
+                    isHovered && styles.plateTagHover,
+                  ]}>
+                    <Text style={[
+                      styles.plateText,
+                      isSelected && styles.plateTextActive,
+                      isHovered && styles.plateTextHover,
+                    ]}>{v.license_plate}</Text>
                   </View>
                 ) : null}
               </TouchableOpacity>
@@ -358,26 +387,31 @@ export default function HomeScreen({ navigation, route }) {
             </View>
           ) : (
             <View style={styles.docsList}>
-              {data.documents.map(doc => (
-                <TouchableOpacity
-                  key={doc.id}
-                  style={styles.docCard}
-                  onPress={() => handleOpenDocument(doc.file_path)}
-                >
-                  <View style={styles.docIconBox}>
-                    <Text style={styles.docIcon}>📄</Text>
-                  </View>
-                  <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={styles.docName} numberOfLines={1}>
-                      {doc.file_name}
-                    </Text>
-                    <Text style={styles.docDate}>
-                      Caricato il {new Date(doc.uploaded_at).toLocaleDateString('it-IT')}
-                    </Text>
-                  </View>
-                  <Text style={styles.docActionText}>Apri ↗</Text>
-                </TouchableOpacity>
-              ))}
+              {data.documents.map(doc => {
+                const isHovered = String(doc.id) === String(hoveredDocId);
+                return (
+                  <TouchableOpacity
+                    key={doc.id}
+                    onMouseEnter={() => setHoveredDocId(doc.id)}
+                    onMouseLeave={() => setHoveredDocId(null)}
+                    style={[styles.docCard, isHovered && styles.docCardHover]}
+                    onPress={() => handleOpenDocument(doc.file_path)}
+                  >
+                    <View style={styles.docIconBox}>
+                      <Text style={styles.docIcon}>📄</Text>
+                    </View>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.docName} numberOfLines={1}>
+                        {doc.file_name}
+                      </Text>
+                      <Text style={styles.docDate}>
+                        Caricato il {new Date(doc.uploaded_at).toLocaleDateString('it-IT')}
+                      </Text>
+                    </View>
+                    <Text style={[styles.docActionText, isHovered && styles.docActionTextHover]}>Apri ↗</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </ScrollView>
@@ -600,6 +634,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   vehicleCardActive: {
+    borderColor: T.red,
+    backgroundColor: 'rgba(229,57,53,0.06)',
+  },
+  vehicleCardHover: {
     borderColor: T.yellow,
     backgroundColor: 'rgba(255,193,7,0.05)',
   },
@@ -613,6 +651,9 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
   avatarCircleActive: {
+    backgroundColor: T.red,
+  },
+  avatarCircleHover: {
     backgroundColor: T.yellow,
   },
   avatarLetter: {
@@ -621,6 +662,9 @@ const styles = StyleSheet.create({
     color: T.textPrimary,
   },
   avatarLetterActive: {
+    color: '#FFFFFF',
+  },
+  avatarLetterHover: {
     color: '#000000',
   },
   cardMake: {
@@ -629,6 +673,9 @@ const styles = StyleSheet.create({
     color: T.textPrimary,
   },
   cardMakeActive: {
+    color: T.red,
+  },
+  cardMakeHover: {
     color: T.yellow,
   },
   cardModel: {
@@ -648,6 +695,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   plateTagActive: {
+    backgroundColor: T.red,
+  },
+  plateTagHover: {
     backgroundColor: T.yellow,
   },
   plateText: {
@@ -657,6 +707,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   plateTextActive: {
+    color: '#FFFFFF',
+  },
+  plateTextHover: {
     color: '#000000',
   },
   infoSummaryCard: {
@@ -664,7 +717,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: T.border,
     borderLeftWidth: 4,
-    borderLeftColor: T.yellow,
+    borderLeftColor: T.red,
     borderRadius: 20,
     padding: 20,
     marginBottom: 25,
@@ -697,13 +750,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   plateTagBig: {
-    backgroundColor: T.yellow,
+    backgroundColor: T.red,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
   },
   plateTextBig: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
     letterSpacing: 1,
@@ -766,7 +819,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: T.surface,
     borderWidth: 2,
-    borderColor: T.yellow,
+    borderColor: T.red,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -775,7 +828,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: T.yellow,
+    backgroundColor: T.red,
   },
   visitCard: {
     backgroundColor: T.surface,
@@ -800,7 +853,7 @@ const styles = StyleSheet.create({
     borderBottomColor: T.border,
   },
   visitDate: {
-    color: T.yellow,
+    color: T.red,
     fontSize: 13,
     fontWeight: 'bold',
   },

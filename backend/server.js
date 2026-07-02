@@ -48,10 +48,11 @@ const initDb = async () => {
     await db.query(`
       CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
-        intorno INTEGER UNIQUE,
+        intorno VARCHAR(100) UNIQUE,
         cliente VARCHAR(255),
         venditore VARCHAR(50),
         data_ora TIMESTAMP,
+        luogo VARCHAR(255),
         last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -560,7 +561,7 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
     const filterVenditore = req.query.venditore;
 
     // 3. Fetch appointments (If admin, fetch all by default; sellers see their own by default)
-    let queryText = 'SELECT intorno, cliente, venditore, data_ora FROM appointments';
+    let queryText = 'SELECT intorno, cliente, venditore, data_ora, luogo FROM appointments';
     let queryParams = [];
 
     if (filterVenditore) {
