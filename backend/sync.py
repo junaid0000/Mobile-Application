@@ -31,45 +31,31 @@ def check_network_host(host, port=445, timeout=1.0):
     except Exception:
         return False
 
-def exists_with_timeout(path, timeout=1.5):
-    """Checks if a path exists using a background thread to prevent infinite OS blocking on UNC network paths."""
-    res = [False]
-    def worker():
-        try:
-            res[0] = os.path.exists(path)
-        except Exception:
-            pass
-    t = threading.Thread(target=worker)
-    t.daemon = True
-    t.start()
-    t.join(timeout)
-    return res[0]
 
-def resolve_source_db():
-    """Resolves whether to read from the live server backend or the local backup file."""
-    # 1. Quick connection check to server host on port 445
-    if check_network_host("192.168.12.250", port=445, timeout=1.0):
-        # 2. Check if the backend UNC share is available
-        if exists_with_timeout(BACKEND_NETWORK_PATH, timeout=1.5):
-            return BACKEND_NETWORK_PATH
-            
-    return BACKEND_LOCAL_PATH
 
 def fetch_access_data(db_path):
-    """Reads data from the specified MS Access database file by copying it locally first."""
+    """Reads data from the specified MS Access database file, copying locally if local, or connecting directly if UNC network path."""
     temp_path = os.path.abspath("temp_sync.accdb")
+    is_temp = False
+    conn_path = db_path
     
-    try:
-        # Copy file locally to prevent locks and network latency issues
-        shutil.copy2(db_path, temp_path)
-    except Exception as copy_err:
-        print(f"Error copying Access DB to temp file: {copy_err}")
-        return []
+    is_unc = db_path.startswith(r"\\")
+    
+    if not is_unc:
+        try:
+            # Copy local file to prevent locks and network latency issues on local disk
+            shutil.copy2(db_path, temp_path)
+            conn_path = temp_path
+            is_temp = True
+        except Exception as copy_err:
+            print(f"Warning: Could not copy Access DB to temp file (locked). Connecting directly: {copy_err}")
+    else:
+        print(f"[Sync] Network UNC path detected. Connecting directly to: {db_path}")
         
     conn = None
     cursor = None
     try:
-        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={temp_path};ReadOnly=1;"
+        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={conn_path};ReadOnly=1;"
         conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = conn.cursor()
         
@@ -80,15 +66,7 @@ def fetch_access_data(db_path):
         data = []
         if use_appuntamenti:
             print("[Sync] Found new Appuntamenti table. Querying it directly...")
-            # Check if Sede exists in Appuntamenti columns
-            columns = [col[3].lower() for col in cursor.columns(table='Appuntamenti')]
-            has_sede = 'sede' in columns
-            
-            if has_sede:
-                query = "SELECT Indice, Cliente, Venditore, AppuntVendita, FasciaOrariaVendita, Sede FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
-            else:
-                query = "SELECT Indice, Cliente, Venditore, AppuntVendita, FasciaOrariaVendita FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
-                
+            query = "SELECT Indice, Cliente, Venditore, AppuntVendita, FasciaOrariaVendita FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
             cursor.execute(query)
             rows = cursor.fetchall()
             
@@ -98,9 +76,7 @@ def fetch_access_data(db_path):
                 venditore = row[2].strip() if row[2] else None
                 date_val = row[3]
                 time_str = str(row[4]).strip() if row[4] is not None else ""
-                sede = row[5].strip() if has_sede and row[5] else ""
-                
-                luogo = sede if sede else None
+                luogo = None
                 
                 # Combine Date and Time
                 data_ora = None
@@ -229,8 +205,8 @@ def fetch_access_data(db_path):
                 pass
         # Give the OS a split second to release file handles
         time.sleep(0.5)
-        # Clean up the temporary file
-        if os.path.exists(temp_path):
+        # Clean up the temporary file if created
+        if is_temp and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except Exception as rm_err:
@@ -279,23 +255,27 @@ def upsert_to_postgresql(data):
 
 def main():
     print("MS Access Backend Sync Service started.")
-    last_mtime = None
     
     while True:
         try:
-            db_path = resolve_source_db()
-            if os.path.exists(db_path):
-                # Check file modification time to see if it changed
-                mtime = os.path.getmtime(db_path)
-                if mtime != last_mtime:
-                    print(f"Syncing backend database file: {db_path}")
-                    last_mtime = mtime
-                    
-                    data = fetch_access_data(db_path)
-                    if data:
-                        upsert_to_postgresql(data)
-            else:
-                print(f"Warning: Access file not found at {db_path}.")
+            data = None
+            db_path = None
+            
+            # 1. Try syncing from the network server database first if SMB is active
+            if check_network_host("192.168.12.250", port=445, timeout=1.0):
+                print(f"[Sync] Server online. Trying network path: {BACKEND_NETWORK_PATH}")
+                db_path = BACKEND_NETWORK_PATH
+                data = fetch_access_data(db_path)
+                
+            # 2. Fall back to the local database file if network is unreachable or fetched no data
+            if not data:
+                print(f"[Sync] Using local fallback path: {BACKEND_LOCAL_PATH}")
+                db_path = BACKEND_LOCAL_PATH
+                data = fetch_access_data(db_path)
+                
+            if data:
+                upsert_to_postgresql(data)
+                
         except Exception as e:
             print(f"Sync loop error: {e}")
             

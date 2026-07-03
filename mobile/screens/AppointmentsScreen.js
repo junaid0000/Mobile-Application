@@ -242,7 +242,7 @@ export default function AppointmentsScreen({ route }) {
   const [sellerCode, setSellerCode] = useState(null); // user's own code
   const [sellersList, setSellersList] = useState([]);
   const [selectedSeller, setSelectedSeller] = useState('__ALL__'); // default depends on role
-  const [filterRecentOnly, setFilterRecentOnly] = useState(true);
+
 
   // Fetch sellers list for the dropdown
   const fetchSellersList = useCallback(async () => {
@@ -354,10 +354,9 @@ export default function AppointmentsScreen({ route }) {
   };
 
   const displayedAppointments = useMemo(() => {
-    if (!filterRecentOnly) return appointments;
     const yesterday = getYesterdayDate();
     return appointments.filter(a => a.data_ora && new Date(a.data_ora) >= yesterday);
-  }, [appointments, filterRecentOnly]);
+  }, [appointments]);
 
   return (
     <View style={s.container}>
@@ -395,16 +394,6 @@ export default function AppointmentsScreen({ route }) {
           onSelect={handleSelectSeller}
           userSellerCode={sellerCode}
         />
-        {/* Segmented Filter Control */}
-        <View style={s.filterRow}>
-          <Text style={s.filterLabel}>Solo Recenti (Ieri + Oggi + Futuri)</Text>
-          <Switch
-            value={filterRecentOnly}
-            onValueChange={setFilterRecentOnly}
-            trackColor={{ false: T.border, true: T.yellow }}
-            thumbColor={filterRecentOnly ? T.yellow : T.textSecondary}
-          />
-        </View>
 
         {loading ? (
           <View style={s.loadingBox}>
@@ -418,16 +407,9 @@ export default function AppointmentsScreen({ route }) {
               <Text style={s.emptyIcon}>📅</Text>
             </View>
             <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
-            {filterRecentOnly ? (
-              <Text style={s.emptySubtitle}>
-                Non ci sono appuntamenti da ieri in poi.{"\n"}
-                Spegni il filtro temporale sopra per vedere lo storico.
-              </Text>
-            ) : (
-              <Text style={s.emptySubtitle}>
-                Non ci sono appuntamenti per il venditore selezionato.
-              </Text>
-            )}
+            <Text style={s.emptySubtitle}>
+              Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
+            </Text>
           </View>
         ) : (
           /* Line by Line Appointment list */
