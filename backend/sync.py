@@ -73,83 +73,145 @@ def fetch_access_data(db_path):
         conn = pyodbc.connect(conn_str, autocommit=True)
         cursor = conn.cursor()
         
-        # Try querying with [Sede], [Data fatturazione CE], [Testo3]
-        has_sede = False
-        try:
-            query = """
-                SELECT Interno, Cliente, Venditore, [Data contratto], [indirizzo], [Residente a], [Sede], [Data fatturazione CE], [Testo3]
-                FROM [Database1]
-                WHERE Interno IS NOT NULL;
-            """
-            cursor.execute(query)
-            has_sede = True
-        except Exception:
-            query = """
-                SELECT Interno, Cliente, Venditore, [Data contratto], [indirizzo], [Residente a], [Data fatturazione CE], [Testo3]
-                FROM [Database1]
-                WHERE Interno IS NOT NULL;
-            """
-            cursor.execute(query)
-            has_sede = False
-            
-        rows = cursor.fetchall()
+        # Check if table 'Appuntamenti' exists in Access
+        tables = [t.table_name.lower() for t in cursor.tables(tableType='TABLE')]
+        use_appuntamenti = 'appuntamenti' in tables
         
         data = []
-        for row in rows:
-            # Interno is the ID, map it to string
-            interno = str(row[0]).strip() if row[0] is not None else None
-            cliente = row[1].strip() if row[1] else None
-            venditore = row[2].strip() if row[2] else None
-            
-            # Combine Sede, address and city for luogo (place of appointment)
-            address = row[4].strip() if row[4] else ""
-            city = row[5].strip() if row[5] else ""
+        if use_appuntamenti:
+            print("[Sync] Found new Appuntamenti table. Querying it directly...")
+            # Check if Sede exists in Appuntamenti columns
+            columns = [col[3].lower() for col in cursor.columns(table='Appuntamenti')]
+            has_sede = 'sede' in columns
             
             if has_sede:
-                sede = row[6].strip() if row[6] else ""
-                date_val = row[7] if row[7] is not None else row[3]
-                time_str = str(row[8]).strip() if row[8] is not None else ""
+                query = "SELECT Indice, Cliente, Venditore, AppuntVendita, FasciaOrariaVendita, Sede FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
             else:
-                sede = ""
-                date_val = row[6] if row[6] is not None else row[3]
-                time_str = str(row[7]).strip() if row[7] is not None else ""
+                query = "SELECT Indice, Cliente, Venditore, AppuntVendita, FasciaOrariaVendita FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
                 
-            parts = [p for p in [sede, address, city] if p]
-            luogo = " - ".join(parts) if parts else None
+            cursor.execute(query)
+            rows = cursor.fetchall()
             
-            # Combine Date and Time into data_ora
-            data_ora = None
-            if date_val:
-                from datetime import datetime
-                if isinstance(date_val, datetime):
-                    dt = date_val
-                else:
-                    try:
-                        dt = datetime.strptime(str(date_val), '%Y-%m-%d %H:%M:%S')
-                    except Exception:
-                        dt = None
-                        
-                if dt:
-                    hour, minute = 0, 0
-                    if time_str:
-                        # Extract start time if a range is provided (e.g., '12:00 - 13:00' -> '12:00')
-                        start_time = time_str.split('-')[0].split('to')[0].split('a')[0].strip()
-                        cleaned_time = start_time.replace('.', ':').replace(' ', '')
+            for row in rows:
+                interno = str(row[0]).strip() if row[0] is not None else None
+                cliente = row[1].strip() if row[1] else None
+                venditore = row[2].strip() if row[2] else None
+                date_val = row[3]
+                time_str = str(row[4]).strip() if row[4] is not None else ""
+                sede = row[5].strip() if has_sede and row[5] else ""
+                
+                luogo = sede if sede else None
+                
+                # Combine Date and Time
+                data_ora = None
+                if date_val:
+                    from datetime import datetime
+                    if isinstance(date_val, datetime):
+                        dt = date_val
+                    else:
+                        # Try parsing dd/mm/yyyy format first
                         try:
-                            if ':' in cleaned_time:
-                                t_parts = cleaned_time.split(':')
-                                hour = int(t_parts[0])
-                                minute = int(t_parts[1]) if len(t_parts) > 1 else 0
-                            else:
-                                hour = int(cleaned_time)
+                            dt = datetime.strptime(str(date_val).strip(), '%d/%m/%Y')
+                        except Exception:
+                            try:
+                                dt = datetime.strptime(str(date_val).strip(), '%Y-%m-%d %H:%M:%S')
+                            except Exception:
+                                dt = None
+                                
+                    if dt:
+                        hour, minute = 0, 0
+                        if time_str:
+                            start_time = time_str.split('-')[0].split('to')[0].split('a')[0].strip()
+                            cleaned_time = start_time.replace('.', ':').replace(' ', '')
+                            try:
+                                if ':' in cleaned_time:
+                                    t_parts = cleaned_time.split(':')
+                                    hour = int(t_parts[0])
+                                    minute = int(t_parts[1]) if len(t_parts) > 1 else 0
+                                else:
+                                    hour = int(cleaned_time)
+                            except ValueError:
+                                pass
+                        try:
+                            data_ora = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
                         except ValueError:
-                            pass
-                    try:
-                        data_ora = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                    except ValueError:
-                        data_ora = dt
-            
-            data.append((interno, cliente, venditore, data_ora, luogo))
+                            data_ora = dt
+                            
+                data.append((interno, cliente, venditore, data_ora, luogo))
+        else:
+            print("[Sync] Appuntamenti table not found. Using fallback Database1 table...")
+            # Try querying with [Sede], [Data fatturazione CE], [Testo3]
+            has_sede = False
+            try:
+                query = """
+                    SELECT Interno, Cliente, Venditore, [Data contratto], [indirizzo], [Residente a], [Sede], [Data fatturazione CE], [Testo3]
+                    FROM [Database1]
+                    WHERE Interno IS NOT NULL;
+                """
+                cursor.execute(query)
+                has_sede = True
+            except Exception:
+                query = """
+                    SELECT Interno, Cliente, Venditore, [Data contratto], [indirizzo], [Residente a], [Data fatturazione CE], [Testo3]
+                    FROM [Database1]
+                    WHERE Interno IS NOT NULL;
+                """
+                cursor.execute(query)
+                has_sede = False
+                
+            rows = cursor.fetchall()
+            for row in rows:
+                interno = str(row[0]).strip() if row[0] is not None else None
+                cliente = row[1].strip() if row[1] else None
+                venditore = row[2].strip() if row[2] else None
+                
+                address = row[4].strip() if row[4] else ""
+                city = row[5].strip() if row[5] else ""
+                
+                if has_sede:
+                    sede = row[6].strip() if row[6] else ""
+                    date_val = row[7] if row[7] is not None else row[3]
+                    time_str = str(row[8]).strip() if row[8] is not None else ""
+                else:
+                    sede = ""
+                    date_val = row[6] if row[6] is not None else row[3]
+                    time_str = str(row[7]).strip() if row[7] is not None else ""
+                    
+                parts = [p for p in [sede, address, city] if p]
+                luogo = " - ".join(parts) if parts else None
+                
+                # Combine Date and Time
+                data_ora = None
+                if date_val:
+                    from datetime import datetime
+                    if isinstance(date_val, datetime):
+                        dt = date_val
+                    else:
+                        try:
+                            dt = datetime.strptime(str(date_val), '%Y-%m-%d %H:%M:%S')
+                        except Exception:
+                            dt = None
+                            
+                    if dt:
+                        hour, minute = 0, 0
+                        if time_str:
+                            start_time = time_str.split('-')[0].split('to')[0].split('a')[0].strip()
+                            cleaned_time = start_time.replace('.', ':').replace(' ', '')
+                            try:
+                                if ':' in cleaned_time:
+                                    t_parts = cleaned_time.split(':')
+                                    hour = int(t_parts[0])
+                                    minute = int(t_parts[1]) if len(t_parts) > 1 else 0
+                                else:
+                                    hour = int(cleaned_time)
+                            except ValueError:
+                                pass
+                        try:
+                            data_ora = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                        except ValueError:
+                            data_ora = dt
+                
+                data.append((interno, cliente, venditore, data_ora, luogo))
         return data
     except Exception as e:
         print(f"Error connecting or reading Access DB ({os.path.basename(db_path)}): {e}")
@@ -237,8 +299,8 @@ def main():
         except Exception as e:
             print(f"Sync loop error: {e}")
             
-        # Check for updates every 30 seconds
-        time.sleep(30)
+        # Check for updates every 7 seconds
+        time.sleep(7)
 
 if __name__ == "__main__":
     main()
