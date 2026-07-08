@@ -66,7 +66,32 @@ def fetch_access_data(db_path):
         data = []
         if use_appuntamenti:
             print("[Sync] Found new Appuntamenti table. Querying it directly...")
-            query = "SELECT Indice, Cliente, Venditore, AppuntVendita, FasciaOrariaVendita FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
+            
+            # Run a lightweight query to inspect column names from description safely
+            cursor.execute("SELECT TOP 1 * FROM [Appuntamenti]")
+            columns = [col[0] for col in cursor.description]
+            
+            note_col = None
+            for col in columns:
+                c_lower = col.lower()
+                if 'note' in c_lower or 'nota' in c_lower or 'istruzioni' in c_lower or 'instruction' in c_lower:
+                    note_col = col
+                    break
+                    
+            cancel_col = None
+            for col in columns:
+                c_lower = col.lower()
+                if 'annull' in c_lower or 'cancell' in c_lower or 'cancel' in c_lower or 'elimina' in c_lower:
+                    cancel_col = col
+                    break
+            
+            select_cols = ["Indice", "Cliente", "Venditore", "AppuntVendita", "FasciaOrariaVendita"]
+            if note_col:
+                select_cols.append(f"[{note_col}]")
+            if cancel_col:
+                select_cols.append(f"[{cancel_col}]")
+                
+            query = f"SELECT {', '.join(select_cols)} FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
             cursor.execute(query)
             rows = cursor.fetchall()
             
@@ -77,6 +102,22 @@ def fetch_access_data(db_path):
                 date_val = row[3]
                 time_str = str(row[4]).strip() if row[4] is not None else ""
                 luogo = None
+                
+                note = None
+                cancellato = False
+                
+                current_idx = 5
+                if note_col:
+                    note = str(row[current_idx]).strip() if row[current_idx] is not None else None
+                    current_idx += 1
+                if cancel_col:
+                    val = row[current_idx]
+                    if isinstance(val, bool):
+                        cancellato = val
+                    elif isinstance(val, int):
+                        cancellato = (val != 0)
+                    elif val is not None:
+                        cancellato = str(val).strip().lower() in ('true', 'yes', 'si', '-1', '1')
                 
                 # Combine Date and Time
                 data_ora = None
@@ -113,7 +154,7 @@ def fetch_access_data(db_path):
                         except ValueError:
                             data_ora = dt
                             
-                data.append((interno, cliente, venditore, data_ora, luogo))
+                data.append((interno, cliente, venditore, data_ora, luogo, note, cancellato))
         else:
             print("[Sync] Appuntamenti table not found. Using fallback Database1 table...")
             # Try querying with [Sede], [Data fatturazione CE], [Testo3]
@@ -187,7 +228,7 @@ def fetch_access_data(db_path):
                         except ValueError:
                             data_ora = dt
                 
-                data.append((interno, cliente, venditore, data_ora, luogo))
+                data.append((interno, cliente, venditore, data_ora, luogo, None, False))
         return data
     except Exception as e:
         print(f"Error connecting or reading Access DB ({os.path.basename(db_path)}): {e}")
@@ -231,7 +272,7 @@ def upsert_to_postgresql(data):
         cursor = pg_conn.cursor()
         
         upsert_query = """
-            INSERT INTO public.appointments (intorno, cliente, venditore, data_ora, luogo)
+            INSERT INTO public.appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato)
             VALUES %s
             ON CONFLICT (intorno) 
             DO UPDATE SET 
@@ -239,6 +280,8 @@ def upsert_to_postgresql(data):
                 venditore = EXCLUDED.venditore,
                 data_ora = EXCLUDED.data_ora,
                 luogo = EXCLUDED.luogo,
+                note = EXCLUDED.note,
+                cancellato = EXCLUDED.cancellato,
                 last_sync = CURRENT_TIMESTAMP;
         """
         

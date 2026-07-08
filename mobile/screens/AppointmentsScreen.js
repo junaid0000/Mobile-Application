@@ -235,6 +235,19 @@ const dropStyles = StyleSheet.create({
 export default function AppointmentsScreen({ route }) {
   const { user, token } = route?.params || {};
   const userRole = user?.role || 'client';
+  
+  // Guard safeguard to check if the user is an admin by role, name, or email
+  const nameLower = user?.name ? user.name.toLowerCase() : '';
+  const emailLower = user?.email ? user.email.toLowerCase() : '';
+  const isAdminUser = userRole === 'admin' ||
+                      nameLower.includes('lorenzo') ||
+                      nameLower.includes('junaid') ||
+                      nameLower.includes('francesco') ||
+                      nameLower.includes('valentina') ||
+                      emailLower.includes('lorenzo') ||
+                      emailLower.includes('junaid') ||
+                      emailLower.includes('francesco') ||
+                      emailLower.includes('valentina');
 
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -242,7 +255,39 @@ export default function AppointmentsScreen({ route }) {
   const [sellerCode, setSellerCode] = useState(null); // user's own code
   const [sellersList, setSellersList] = useState([]);
   const [selectedSeller, setSelectedSeller] = useState('__ALL__'); // default depends on role
+  const [activeNotification, setActiveNotification] = useState(null);
 
+  const notifiedApptsRef = useRef(new Set());
+
+  // Check for appointments scheduled exactly in 30 minutes (28 to 31 min window)
+  const checkUpcomingNotifications = useCallback((list) => {
+    if (!list || list.length === 0) return;
+    const now = new Date();
+    list.forEach(appt => {
+      if (!appt.data_ora || appt.cancellato) return;
+      
+      const apptTime = new Date(appt.data_ora);
+      const diffMs = apptTime.getTime() - now.getTime();
+      const diffMinutes = Math.round(diffMs / (1000 * 60));
+      
+      // Trigger notification if appointment is 30 mins away and not notified yet
+      if (diffMinutes >= 28 && diffMinutes <= 31 && !notifiedApptsRef.current.has(appt.intorno)) {
+        notifiedApptsRef.current.add(appt.intorno);
+        
+        setActiveNotification({
+          id: appt.intorno,
+          client: appt.cliente || 'Cliente',
+          time: formatTime(appt.data_ora),
+          seller: appt.venditore || 'Venditore'
+        });
+        
+        // Auto dismiss after 10 seconds
+        setTimeout(() => {
+          setActiveNotification(null);
+        }, 10000);
+      }
+    });
+  }, []);
 
   // Fetch sellers list for the dropdown
   const fetchSellersList = useCallback(async () => {
@@ -266,7 +311,10 @@ export default function AppointmentsScreen({ route }) {
       const res = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setAppointments(res.data.appointments || []);
+      const list = res.data.appointments || [];
+      setAppointments(list);
+      checkUpcomingNotifications(list);
+      
       if (!sellerCode && res.data.seller_code) {
         setSellerCode(res.data.seller_code);
       }
@@ -274,16 +322,22 @@ export default function AppointmentsScreen({ route }) {
       console.error('Error fetching appointments:', err);
       setAppointments([]);
     }
-  }, [token, sellerCode]);
+  }, [token, sellerCode, checkUpcomingNotifications]);
+
+  // Periodic interval to check upcoming appointments every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkUpcomingNotifications(appointments);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [appointments, checkUpcomingNotifications]);
 
   // Initial load
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await fetchSellersList();
-
-      // Default filter: seller sees own, admin sees all
-      if (userRole === 'admin') {
+      if (isAdminUser) {
+        await fetchSellersList();
         setSelectedSeller('__ALL__');
         await fetchAppointments('__ALL__');
       } else {
@@ -360,6 +414,27 @@ export default function AppointmentsScreen({ route }) {
 
   return (
     <View style={s.container}>
+      {/* Sliding In-App Upcoming Alert Banner */}
+      {activeNotification && (
+        <View style={s.notificationBanner}>
+          <View style={s.notificationContent}>
+            <Text style={s.notificationIcon}>🔔</Text>
+            <View style={s.notificationTextWrapper}>
+              <Text style={s.notificationTitle}>Preavviso Appuntamento (30 min)</Text>
+              <Text style={s.notificationDesc}>
+                {activeNotification.seller}, hai un appuntamento alle {activeNotification.time} con {activeNotification.client}.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={s.notificationCloseBtn}
+              onPress={() => setActiveNotification(null)}
+            >
+              <Text style={s.notificationCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* ── Top Nav Bar ─────────────────────────────────────────── */}
       <View style={s.topBar}>
         <View>
@@ -387,13 +462,15 @@ export default function AppointmentsScreen({ route }) {
           />
         }
       >
-        {/* Seller Dropdown Filter */}
-        <SellerDropdown
-          sellers={sellersList}
-          selected={selectedSeller || '__ALL__'}
-          onSelect={handleSelectSeller}
-          userSellerCode={sellerCode}
-        />
+        {/* Seller Dropdown Filter - Only visible for admin users */}
+        {isAdminUser && (
+          <SellerDropdown
+            sellers={sellersList}
+            selected={selectedSeller || '__ALL__'}
+            onSelect={handleSelectSeller}
+            userSellerCode={sellerCode}
+          />
+        )}
 
         {loading ? (
           <View style={s.loadingBox}>
@@ -414,7 +491,10 @@ export default function AppointmentsScreen({ route }) {
         ) : (
           /* Line by Line Appointment list */
           displayedAppointments.map((appt, idx) => (
-            <View key={`${appt.intorno}-${idx}`} style={s.lineItem}>
+            <View 
+              key={`${appt.intorno}-${idx}`} 
+              style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
+            >
               {/* Left: Day, Date & Year Block */}
               <View style={s.dateBlock}>
                 <Text style={s.dayText}>{getDayOfWeek(appt.data_ora)}</Text>
@@ -429,12 +509,20 @@ export default function AppointmentsScreen({ route }) {
                     🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
                   </Text>
                 </View>
-                <Text style={s.clientText} numberOfLines={1}>
+                <Text 
+                  style={[s.clientText, appt.cancellato && s.clientTextCancelled]} 
+                  numberOfLines={1}
+                >
                   {appt.cliente || 'Cliente Sconosciuto'}
                 </Text>
                 <Text style={s.placeText} numberOfLines={1}>
                   📍 {appt.luogo || 'Sede non specificata'}
                 </Text>
+                {appt.note ? (
+                  <Text style={s.noteText} numberOfLines={2}>
+                    📝 {appt.note}
+                  </Text>
+                ) : null}
               </View>
 
               {/* Right: Badge Meta */}
@@ -445,6 +533,11 @@ export default function AppointmentsScreen({ route }) {
                 {appt.venditore && (
                   <View style={s.sellerBadgeSmall}>
                     <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
+                  </View>
+                )}
+                {appt.cancellato && (
+                  <View style={s.cancelledBadge}>
+                    <Text style={s.cancelledText}>✓ Annullato</Text>
                   </View>
                 )}
               </View>
@@ -668,5 +761,83 @@ const s = StyleSheet.create({
     color: T.textSecondary,
     fontSize: 11,
     fontWeight: '700',
+  },
+  lineItemCancelled: {
+    borderColor: 'rgba(229,57,53,0.2)',
+    backgroundColor: 'rgba(22,24,34,0.6)',
+  },
+  clientTextCancelled: {
+    textDecorationLine: 'line-through',
+    color: T.textMuted,
+  },
+  noteText: {
+    color: T.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  cancelledBadge: {
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    borderColor: 'rgba(16,185,129,0.3)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  cancelledText: {
+    color: T.green,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  notificationBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 95 : 65,
+    left: 16,
+    right: 16,
+    backgroundColor: '#1E293B',
+    borderColor: '#FFC107',
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 14,
+    zIndex: 9999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  notificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  notificationIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  notificationTextWrapper: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  notificationTitle: {
+    color: '#FFC107',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  notificationDesc: {
+    color: '#F1F5F9',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  notificationCloseBtn: {
+    padding: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+  },
+  notificationCloseText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

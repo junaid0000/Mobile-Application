@@ -57,6 +57,21 @@ const initDb = async () => {
       );
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_appointments_venditore ON appointments(venditore);`);
+    await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS note TEXT;`);
+    await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS cancellato BOOLEAN DEFAULT FALSE;`);
+    
+    // Promote administration users to admin role dynamically
+    await db.query(`
+      UPDATE users 
+      SET role = 'admin' 
+      WHERE email IN ('Lorenzo@gmail.com', 'lorenzo01@gmail.com', 'junaid4@gmail.com') 
+         OR email LIKE '%francesco%' 
+         OR email LIKE '%valentina%'
+         OR name ILIKE '%lorenzo%' 
+         OR name ILIKE '%junaid%' 
+         OR name ILIKE '%francesco%'
+         OR name ILIKE '%valentina%';
+    `);
     
     // Create vehicles table
     await db.query(`
@@ -540,36 +555,48 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // 1. Fetch user's venditore_code and role
-    const userResult = await db.query('SELECT venditore_code, role FROM users WHERE id = $1', [userId]);
+    // 1. Fetch user's details
+    const userResult = await db.query('SELECT name, email, venditore_code, role FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'Seller account not found' });
     }
 
-    const { venditore_code, role } = userResult.rows[0];
+    const { name, email, venditore_code, role } = userResult.rows[0];
+    const nameLower = name ? name.toLowerCase() : '';
+    const emailLower = email ? email.toLowerCase() : '';
+    const isAdminUser = role === 'admin' || 
+                        nameLower.includes('lorenzo') || 
+                        nameLower.includes('junaid') || 
+                        nameLower.includes('francesco') ||
+                        nameLower.includes('valentina') ||
+                        emailLower.includes('lorenzo') ||
+                        emailLower.includes('junaid') ||
+                        emailLower.includes('francesco') ||
+                        emailLower.includes('valentina');
 
     // Ensure the user actually has a seller role or is an admin
-    if (role !== 'seller' && role !== 'admin') {
+    if (role !== 'seller' && !isAdminUser) {
       return res.status(403).json({ error: 'Access denied: Only sellers can view appointments' });
     }
 
-    if (!venditore_code && role !== 'admin') {
+    if (!venditore_code && !isAdminUser) {
       return res.status(400).json({ error: 'This user account is not linked to a seller code' });
     }
 
     // 2. Check if a specific venditore filter was requested via query param
     const filterVenditore = req.query.venditore;
 
-    // 3. Fetch appointments (If admin, fetch all by default; sellers see their own by default)
-    let queryText = 'SELECT intorno, cliente, venditore, data_ora, luogo FROM appointments';
+    // 3. Fetch appointments
+    let queryText = 'SELECT intorno, cliente, venditore, data_ora, luogo, note, cancellato FROM appointments';
     let queryParams = [];
 
-    if (filterVenditore) {
-      // Explicit filter requested — both sellers and admins can use this
-      queryText += ' WHERE venditore = $1';
-      queryParams.push(filterVenditore);
-    } else if (role !== 'admin') {
-      // Default for sellers: show only their own
+    if (isAdminUser) {
+      if (filterVenditore && filterVenditore !== '__ALL__') {
+        queryText += ' WHERE venditore = $1';
+        queryParams.push(filterVenditore);
+      }
+    } else {
+      // Normal sellers: strictly restricted to their own code
       queryText += ' WHERE venditore = $1';
       queryParams.push(venditore_code);
     }
@@ -594,13 +621,25 @@ app.get('/api/seller/sellers-list', authenticateToken, async (req, res) => {
     const userId = req.user.id;
 
     // Verify user is a seller or admin
-    const userResult = await db.query('SELECT venditore_code, role FROM users WHERE id = $1', [userId]);
+    const userResult = await db.query('SELECT name, email, venditore_code, role FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const { role } = userResult.rows[0];
-    if (role !== 'seller' && role !== 'admin') {
+    const { name, email, role } = userResult.rows[0];
+    const nameLower = name ? name.toLowerCase() : '';
+    const emailLower = email ? email.toLowerCase() : '';
+    const isAdminUser = role === 'admin' || 
+                        nameLower.includes('lorenzo') || 
+                        nameLower.includes('junaid') || 
+                        nameLower.includes('francesco') ||
+                        nameLower.includes('valentina') ||
+                        emailLower.includes('lorenzo') ||
+                        emailLower.includes('junaid') ||
+                        emailLower.includes('francesco') ||
+                        emailLower.includes('valentina');
+
+    if (role !== 'seller' && !isAdminUser) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
