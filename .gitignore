@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+mobile/node_modules/
+backend/node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Temp files
+backend/temp_sync.accdb
+*.laccdb
+
+# Environment (contains passwords)
+backend/.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Expo
+.expo/
+mobile/.expo/
+
+# Uploads (user data)
+backend/uploads/

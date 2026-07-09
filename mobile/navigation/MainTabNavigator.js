@@ -57,10 +57,13 @@ const tabIconStyles = StyleSheet.create({
 export default function MainTabNavigator({ route }) {
   const { user, token } = route?.params || {};
   const userRole = user?.role || 'client';
-  const showAppointments = userRole === 'seller' || userRole === 'admin';
+
+  const isSeller = userRole === 'seller';
+  const isClient = userRole === 'client';
 
   return (
     <Tab.Navigator
+      initialRouteName={isSeller ? "Appointments" : "Clients"}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -75,35 +78,41 @@ export default function MainTabNavigator({ route }) {
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.15,
           shadowRadius: 12,
+          // Hide bottom tab bar if user is a seller (only 1 screen)
+          display: isSeller ? 'none' : 'flex',
         },
         tabBarShowLabel: false,
       }}
     >
-      {/* ── TAB 1: Clients / HomeScreen ─────────────────────────── */}
-      <Tab.Screen
-        name="Clients"
-        component={HomeScreen}
-        initialParams={{ user, token }}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="👤" label="Clients" focused={focused} />
-          ),
-        }}
-      />
+      {/* ── TAB 1: Clients / HomeScreen (Only for Clients) ─────────────────────────── */}
+      {isClient && (
+        <Tab.Screen
+          name="Clients"
+          component={HomeScreen}
+          initialParams={{ user, token }}
+          options={{
+            tabBarIcon: ({ focused }) => (
+              <TabIcon emoji="👤" label="Clients" focused={focused} />
+            ),
+          }}
+        />
+      )}
 
-      {/* ── TAB 2: Inventory ────────────────────────────────────── */}
-      <Tab.Screen
-        name="Inventory"
-        component={InventoryScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🚗" label="Inventory" focused={focused} />
-          ),
-        }}
-      />
+      {/* ── TAB 2: Inventory (Only for Clients) ────────────────────────────────────── */}
+      {isClient && (
+        <Tab.Screen
+          name="Inventory"
+          component={InventoryScreen}
+          options={{
+            tabBarIcon: ({ focused }) => (
+              <TabIcon emoji="🚗" label="Inventory" focused={focused} />
+            ),
+          }}
+        />
+      )}
 
-      {/* ── TAB 3: Appointments (sellers & admins only) ─────────── */}
-      {showAppointments && (
+      {/* ── TAB 3: Appointments (Sellers and Admins) ─────────── */}
+      {(isSeller || userRole === 'admin') && (
         <Tab.Screen
           name="Appointments"
           component={AppointmentsScreen}

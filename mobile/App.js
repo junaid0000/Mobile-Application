@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import AdminDashboard from './screens/AdminDashboard';
+import AppointmentsScreen from './screens/AppointmentsScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
 const Stack = createNativeStackNavigator();
@@ -34,6 +35,9 @@ export default function App() {
 
           {/* Admin: full-screen dashboard (unchanged) */}
           <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
+          
+          {/* Admin Appointments view stack entry */}
+          <Stack.Screen name="Appointments" component={AppointmentsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

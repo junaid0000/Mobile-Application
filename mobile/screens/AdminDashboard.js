@@ -327,9 +327,17 @@ export default function AdminDashboard({ navigation, route }) {
           <Text style={styles.brand}>ROSSOMANDI</Text>
           <Text style={styles.roleTag}>ADMIN PANEL</Text>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity 
+            style={styles.appointmentsBtn} 
+            onPress={() => navigation.navigate('Appointments', { user, token })}
+          >
+            <Text style={styles.appointmentsBtnText}>📅 Appuntamenti</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.logoutButton} onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.logoutText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.contentLayout}>
@@ -1204,5 +1212,18 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: 'bold',
     fontSize: 14
+  },
+  appointmentsBtn: {
+    borderWidth: 1,
+    borderColor: '#FFC107',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,193,7,0.08)'
+  },
+  appointmentsBtnText: {
+    color: '#FFC107',
+    fontSize: 14,
+    fontWeight: 'bold'
   }
 });

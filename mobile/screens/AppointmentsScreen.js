@@ -232,7 +232,7 @@ const dropStyles = StyleSheet.create({
 });
 
 // ─── Main Appointments Screen ───────────────────────────────────────────────
-export default function AppointmentsScreen({ route }) {
+export default function AppointmentsScreen({ navigation, route }) {
   const { user, token } = route?.params || {};
   const userRole = user?.role || 'client';
   
@@ -437,14 +437,34 @@ export default function AppointmentsScreen({ route }) {
 
       {/* ── Top Nav Bar ─────────────────────────────────────────── */}
       <View style={s.topBar}>
-        <View>
-          <Text style={s.topBarBrand}>ROSSOMANDI</Text>
-          <Text style={s.topBarSub}>Appuntamenti</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {navigation?.canGoBack() && (
+            <TouchableOpacity 
+              onPress={() => navigation.goBack()} 
+              style={{ marginRight: 15, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 }}
+            >
+              <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>◀</Text>
+            </TouchableOpacity>
+          )}
+          <View>
+            <Text style={s.topBarBrand}>ROSSOMANDI</Text>
+            <Text style={s.topBarSub}>Appuntamenti</Text>
+          </View>
         </View>
-        <View style={s.statsChip}>
-          <Text style={s.statsChipText}>
-            📅 {displayedAppointments.length}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={s.statsChip}>
+            <Text style={s.statsChipText}>
+              📅 {displayedAppointments.length}
+            </Text>
+          </View>
+          {!navigation?.canGoBack() && (
+            <TouchableOpacity 
+              onPress={() => navigation.navigate('Login')} 
+              style={{ marginLeft: 10, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(229,57,53,0.12)', borderColor: 'rgba(229,57,53,0.3)', borderWidth: 1, borderRadius: 8 }}
+            >
+              <Text style={{ color: '#E53935', fontSize: 12, fontWeight: 'bold' }}>Esci 🚪</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
