@@ -9,7 +9,8 @@ import {
   Alert,
   Modal,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Image
 } from 'react-native';
 import axios from 'axios';
 import * as DocumentPicker from 'expo-document-picker';
@@ -323,11 +324,23 @@ export default function AdminDashboard({ navigation, route }) {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.brand}>ROSSOMANDI</Text>
-          <Text style={styles.roleTag}>ADMIN PANEL</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Image
+            source={require('../assets/images/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <View style={{ marginLeft: 12 }}>
+            <Text style={styles.roleTag}>ADMIN PANEL</Text>
+          </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity 
+            style={styles.appointmentsBtn} 
+            onPress={() => navigation.navigate('OfficeChat', { user, token })}
+          >
+            <Text style={styles.appointmentsBtnText}>💬 Chat Ufficio</Text>
+          </TouchableOpacity>
           <TouchableOpacity 
             style={styles.appointmentsBtn} 
             onPress={() => navigation.navigate('Appointments', { user, token })}
@@ -342,7 +355,7 @@ export default function AdminDashboard({ navigation, route }) {
 
       <View style={styles.contentLayout}>
         {/* Left Column: Clients List */}
-        <View style={[styles.column, { flex: selectedClient ? 1.2 : 2 }]}>
+        <View style={[styles.column, { flex: selectedClient ? 1 : 2, maxWidth: selectedClient ? 400 : '100%' }]}>
           <View style={styles.listHeaderRow}>
             <Text style={styles.sectionTitle}>Clients ({clients.length})</Text>
             <TouchableOpacity style={styles.addButton} onPress={() => setAddModalVisible(true)}>
@@ -920,10 +933,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    backgroundColor: '#161822',
+    padding: 20,
     borderBottomWidth: 1,
-    borderColor: '#222',
-    paddingBottom: 16
+    borderBottomColor: '#2A2D3A',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  logo: {
+    width: 140,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   brand: {
     fontSize: 24,
@@ -932,11 +955,10 @@ const styles = StyleSheet.create({
     letterSpacing: 2
   },
   roleTag: {
-    color: '#FFF',
+    color: '#FFC107',
     fontSize: 12,
     fontWeight: 'bold',
-    opacity: 0.8,
-    marginTop: 2
+    letterSpacing: 1,
   },
   logoutButton: {
     borderWidth: 1,

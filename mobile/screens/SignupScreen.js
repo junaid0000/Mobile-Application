@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform, Image } from 'react-native';
 import axios from 'axios';
 
 export default function SignupScreen({ navigation }) {
@@ -36,7 +36,11 @@ export default function SignupScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.brand}>ROSSOMANDI</Text>
+        <Image 
+          source={require('../assets/images/logo.png')} 
+          style={styles.logo} 
+          resizeMode="contain" 
+        />
         <Text style={styles.subtitle}>Create Your Account</Text>
       </View>
 
@@ -93,12 +97,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 60,
   },
-  brand: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: '#E53935',
-    letterSpacing: 2,
-    marginBottom: 8,
+  logo: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#E53935',
   },
   subtitle: {
     fontSize: 16,
@@ -109,6 +115,8 @@ const styles = StyleSheet.create({
   },
   form: {
     width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
   input: {
     backgroundColor: '#161822',

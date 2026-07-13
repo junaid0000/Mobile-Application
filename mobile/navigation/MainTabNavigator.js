@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/HomeScreen';
 import InventoryScreen from '../screens/InventoryScreen';
 import AppointmentsScreen from '../screens/AppointmentsScreen';
+import OfficeChatScreen from '../screens/OfficeChatScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -78,8 +79,8 @@ export default function MainTabNavigator({ route }) {
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.15,
           shadowRadius: 12,
-          // Hide bottom tab bar if user is a seller (only 1 screen)
-          display: isSeller ? 'none' : 'flex',
+          // Show bottom tab bar for all roles
+          display: 'flex',
         },
         tabBarShowLabel: false,
       }}
@@ -120,6 +121,20 @@ export default function MainTabNavigator({ route }) {
           options={{
             tabBarIcon: ({ focused }) => (
               <TabIcon emoji="📅" label="Appointments" focused={focused} />
+            ),
+          }}
+        />
+      )}
+
+      {/* ── TAB 4: Office Chat (Sellers and Admins) ─────────── */}
+      {(isSeller || userRole === 'admin') && (
+        <Tab.Screen
+          name="OfficeChat"
+          component={OfficeChatScreen}
+          initialParams={{ user, token }}
+          options={{
+            tabBarIcon: ({ focused }) => (
+              <TabIcon emoji="💬" label="Chat" focused={focused} />
             ),
           }}
         />

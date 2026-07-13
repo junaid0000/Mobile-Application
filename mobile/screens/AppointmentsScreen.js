@@ -12,6 +12,7 @@ import {
   Animated,
   FlatList,
   Switch,
+  Image,
 } from 'react-native';
 import axios from 'axios';
 
@@ -447,7 +448,11 @@ export default function AppointmentsScreen({ navigation, route }) {
             </TouchableOpacity>
           )}
           <View>
-            <Text style={s.topBarBrand}>ROSSOMANDI</Text>
+            <Image 
+              source={require('../assets/images/logo.png')} 
+              style={s.logo} 
+              resizeMode="contain" 
+            />
             <Text style={s.topBarSub}>Appuntamenti</Text>
           </View>
         </View>
@@ -594,11 +599,11 @@ const s = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  topBarBrand: {
-    color: T.red,
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 2,
+  logo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   topBarSub: {
     color: T.textSecondary,

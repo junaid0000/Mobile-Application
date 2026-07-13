@@ -12,6 +12,7 @@ import {
   Modal,
   Animated,
   useWindowDimensions,
+  Image,
 } from 'react-native';
 import axios from 'axios';
 import * as WebBrowser from 'expo-web-browser';
@@ -117,7 +118,11 @@ function SideDrawer({ visible, onClose, userName, userEmail, onLogout }) {
 
           {/* Rossomandi Bar */}
           <View style={styles.drawerBrandStrip}>
-            <Text style={styles.drawerBrandText}>ROSSOMANDI AUTO</Text>
+            <Image 
+              source={require('../assets/images/logo.png')} 
+              style={styles.drawerLogo} 
+              resizeMode="contain" 
+            />
           </View>
 
           {/* Drawer Menu Items */}
@@ -432,7 +437,11 @@ export default function HomeScreen({ navigation, route }) {
           <Text style={styles.hamburgerText}>☰</Text>
         </TouchableOpacity>
         
-        <Text style={styles.brandTitle}>ROSSOMANDI</Text>
+        <Image 
+          source={require('../assets/images/logo.png')} 
+          style={styles.logo} 
+          resizeMode="contain" 
+        />
         
         <TouchableOpacity style={styles.profileCircle} onPress={() => setDrawerVisible(true)}>
           <Text style={styles.profileLetter}>
@@ -532,11 +541,11 @@ const styles = StyleSheet.create({
     fontSize: 26,
     color: T.textPrimary,
   },
-  brandTitle: {
-    color: T.red,
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 2,
+  logo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   profileCircle: {
     width: 36,
@@ -993,9 +1002,18 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyIconLarge: {
-    fontSize: 48,
-    marginBottom: 16,
-    opacity: 0.6,
+    fontSize: 50,
+    marginBottom: 20,
+    opacity: 0.5,
+  },
+  drawerLogo: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    overflow: 'hidden',
+    alignSelf: 'center',
+    borderWidth: 2,
+    borderColor: '#E53935',
   },
   emptyTextLarge: {
     color: T.textSecondary,

@@ -113,6 +113,16 @@ const initDb = async () => {
       );
     `);
 
+    // Create office_messages table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS office_messages (
+        id SERIAL PRIMARY KEY,
+        user_id INT REFERENCES users(id) ON DELETE CASCADE,
+        message_text TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Seed admin account
     const adminEmail = 'admin@rossomandi.com';
     const adminExists = await db.query('SELECT * FROM users WHERE email = $1', [adminEmail]);
@@ -166,6 +176,20 @@ const isAdmin = (req, res, next) => {
     next();
   } else {
     res.status(403).json({ error: 'Access denied: Admins only' });
+  }
+};
+
+// Office Staff Auth Check Middleware (Admin or Seller)
+const isOfficeStaff = async (req, res, next) => {
+  try {
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
+    if (userResult.rows.length > 0 && (userResult.rows[0].role === 'admin' || userResult.rows[0].role === 'seller')) {
+      next();
+    } else {
+      res.status(403).json({ error: 'Access denied: Office staff only' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Server error verifying role' });
   }
 };
 
@@ -645,6 +669,53 @@ app.get('/api/seller/sellers-list', authenticateToken, async (req, res) => {
 
     const result = await db.query('SELECT DISTINCT venditore FROM appointments WHERE venditore IS NOT NULL ORDER BY venditore ASC');
     res.json({ sellers: result.rows.map(r => r.venditore) });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// OFFICE CHAT ENDPOINTS
+
+// Get recent messages
+app.get('/api/office/messages', authenticateToken, isOfficeStaff, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT m.id, m.message_text, m.created_at, u.name, u.role
+      FROM office_messages m
+      JOIN users u ON m.user_id = u.id
+      ORDER BY m.created_at ASC
+      LIMIT 100
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// Post new message
+app.post('/api/office/messages', authenticateToken, isOfficeStaff, async (req, res) => {
+  try {
+    const { message_text } = req.body;
+    if (!message_text || message_text.trim() === '') {
+      return res.status(400).json({ error: 'Message cannot be empty' });
+    }
+
+    const result = await db.query(
+      'INSERT INTO office_messages (user_id, message_text) VALUES ($1, $2) RETURNING id, message_text, created_at',
+      [req.user.id, message_text.trim()]
+    );
+    
+    // Fetch with user details to return the complete object
+    const populated = await db.query(`
+      SELECT m.id, m.message_text, m.created_at, u.name, u.role
+      FROM office_messages m
+      JOIN users u ON m.user_id = u.id
+      WHERE m.id = $1
+    `, [result.rows[0].id]);
+
+    res.status(201).json(populated.rows[0]);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');

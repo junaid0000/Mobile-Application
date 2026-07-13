@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, Image, ScrollView, TouchableOpacity } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 
 const T = {
   bg: '#000000',
@@ -15,62 +16,96 @@ const T = {
   shadow: 'rgba(0,0,0,0.5)',
 };
 
+const PROMOTIONS = [
+  {
+    id: '1',
+    make: 'Ferrari',
+    model: 'SF90 Stradale',
+    tag: 'SUPERCAR',
+    image: require('../assets/images/ferrari_promo.png'),
+    offer: 'Finanziamento Tasso Zero',
+  },
+  {
+    id: '2',
+    make: 'Porsche',
+    model: '911 GT3 RS',
+    tag: 'KM 0',
+    image: require('../assets/images/porsche_promo.png'),
+    offer: 'Pronta Consegna',
+  },
+  {
+    id: '3',
+    make: 'Audi',
+    model: 'RS e-tron GT',
+    tag: 'OFFERTA SPECIALE',
+    image: require('../assets/images/audi_promo.png'),
+    offer: 'Ecoincentivi Inclusi',
+  },
+];
+
 export default function InventoryScreen() {
+  const handleOpenPromo = async () => {
+    await WebBrowser.openBrowserAsync('https://www.rossomandi.com');
+  };
+
   return (
     <View style={s.container}>
       {/* Top decorative bar */}
       <View style={s.topBar}>
-        <Text style={s.topBarBrand}>ROSSOMANDI</Text>
+        <Image 
+          source={require('../assets/images/logo.png')} 
+          style={s.topBarLogo} 
+          resizeMode="contain" 
+        />
         <Text style={s.topBarSub}>Inventory</Text>
       </View>
 
-      {/* Main content */}
-      <View style={s.content}>
-        {/* Icon circle */}
-        <View style={s.iconCircle}>
-          <Text style={s.icon}>🚗</Text>
-        </View>
+      <ScrollView style={s.scrollArea} contentContainerStyle={s.content}>
+        
+        {/* Title */}
+        <Text style={s.mainTitle}>Offerte Speciali</Text>
+        <Text style={s.mainSubtitle}>Scopri le nostre migliori promozioni in evidenza</Text>
 
-        <Text style={s.title}>Inventario Veicoli</Text>
-        <Text style={s.subtitle}>
-          I dati dell'inventario saranno{'\n'}
-          disponibili presto dal database{'\n'}
-          dell'ufficio Rossomandi.
-        </Text>
+        {/* Promotions Carousel */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={s.carousel}
+          contentContainerStyle={{ paddingRight: 30 }}
+        >
+          {PROMOTIONS.map((promo) => (
+            <TouchableOpacity key={promo.id} style={s.promoCard} onPress={handleOpenPromo}>
+              <Image source={promo.image} style={s.promoImage} />
+              <View style={s.promoOverlay}>
+                <View style={s.promoTag}>
+                  <Text style={s.promoTagText}>{promo.tag}</Text>
+                </View>
+                <View style={s.promoDetails}>
+                  <Text style={s.promoTitle}>{promo.make} {promo.model}</Text>
+                  <Text style={s.promoOffer}>{promo.offer}</Text>
+                  <View style={s.promoButton}>
+                    <Text style={s.promoButtonText}>Scopri l'offerta ↗</Text>
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-        {/* Progress dots */}
-        <View style={s.dotsRow}>
-          <View style={[s.dot, s.dotActive]} />
-          <View style={s.dot} />
-          <View style={s.dot} />
-        </View>
-
-        {/* Info card */}
+        {/* Info card (Legacy DB placeholder) */}
         <View style={s.infoCard}>
           <View style={s.infoIconBox}>
             <Text style={s.infoIcon}>📡</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.infoTitle}>In Arrivo</Text>
+            <Text style={s.infoTitle}>Inventario Completo in Arrivo</Text>
             <Text style={s.infoText}>
-              Questa sezione mostrerà lo stock aggiornato in tempo reale direttamente dal database dell'ufficio.
+              Questa sezione mostrerà presto lo stock aggiornato in tempo reale direttamente dal database MS Access dell'ufficio.
             </Text>
           </View>
         </View>
 
-        {/* Stats row */}
-        <View style={s.statsRow}>
-          <View style={s.statCard}>
-            <Text style={s.statNum}>—</Text>
-            <Text style={s.statLabel}>Veicoli disponibili</Text>
-          </View>
-          <View style={s.statDivider} />
-          <View style={s.statCard}>
-            <Text style={s.statNum}>—</Text>
-            <Text style={s.statLabel}>Ultimo Aggiornamento</Text>
-          </View>
-        </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -83,7 +118,7 @@ const s = StyleSheet.create({
   topBar: {
     backgroundColor: T.surface,
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: 15,
+    paddingBottom: 10,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
@@ -91,11 +126,11 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  topBarBrand: {
-    color: T.red,
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 2,
+  topBarLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   topBarSub: {
     color: T.textSecondary,
@@ -103,55 +138,93 @@ const s = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
   },
-  content: {
+  scrollArea: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
-    backgroundColor: T.bg,
   },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: T.redLight,
-    borderWidth: 1,
-    borderColor: T.redBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+  content: {
+    paddingVertical: 30,
+    paddingHorizontal: 20,
   },
-  icon: {
-    fontSize: 36,
-  },
-  title: {
+  mainTitle: {
     color: T.textPrimary,
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
+    marginBottom: 5,
   },
-  subtitle: {
+  mainSubtitle: {
     color: T.textSecondary,
     fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
+    marginBottom: 20,
+  },
+  carousel: {
     marginBottom: 30,
+    overflow: 'visible',
   },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 40,
+  promoCard: {
+    width: 280,
+    height: 380,
+    backgroundColor: T.surface,
+    borderRadius: 20,
+    marginRight: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: T.border,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#3A3D4A',
+  promoImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+    opacity: 0.8,
   },
-  dotActive: {
-    backgroundColor: T.yellow,
-    width: 20,
+  promoOverlay: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  promoTag: {
+    backgroundColor: T.red,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  promoTagText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  promoDetails: {
+    marginTop: 'auto',
+  },
+  promoTitle: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 5,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  promoOffer: {
+    color: T.yellow,
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 15,
+  },
+  promoButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  promoButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   infoCard: {
     flexDirection: 'row',
@@ -161,13 +234,11 @@ const s = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     gap: 15,
-    maxWidth: 400,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 2,
-    marginBottom: 30,
   },
   infoIconBox: {
     width: 40,
@@ -190,40 +261,5 @@ const s = StyleSheet.create({
     color: T.textSecondary,
     fontSize: 13,
     lineHeight: 18,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: T.surface,
-    borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 16,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    width: '100%',
-    maxWidth: 400,
-  },
-  statCard: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNum: {
-    color: T.yellow,
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  statLabel: {
-    color: T.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: T.border,
   },
 });
