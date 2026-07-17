@@ -10,7 +10,8 @@ import {
   Modal,
   Platform,
   ActivityIndicator,
-  Image
+  Image,
+  useWindowDimensions
 } from 'react-native';
 import axios from 'axios';
 import * as DocumentPicker from 'expo-document-picker';
@@ -21,7 +22,10 @@ export default function AdminDashboard({ navigation, route }) {
 
   const BASE_URL = Platform.OS === 'web'
     ? 'http://localhost:5000'
-    : 'http://192.168.11.251:5000';
+    : 'http://192.168.12.152:5000';
+
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
 
   const [clients, setClients] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -353,9 +357,17 @@ export default function AdminDashboard({ navigation, route }) {
         </View>
       </View>
 
-      <View style={styles.contentLayout}>
+      <View style={[styles.contentLayout, { flexDirection: isMobile ? 'column' : 'row' }]}>
         {/* Left Column: Clients List */}
-        <View style={[styles.column, { flex: selectedClient ? 1 : 2, maxWidth: selectedClient ? 400 : '100%' }]}>
+        <View style={[
+          styles.column, 
+          { 
+            flex: selectedClient && !isMobile ? 1 : 2, 
+            maxWidth: selectedClient && !isMobile ? 400 : '100%', 
+            marginBottom: isMobile ? 20 : 0,
+            display: isMobile && selectedClient ? 'none' : 'flex'
+          }
+        ]}>
           <View style={styles.listHeaderRow}>
             <Text style={styles.sectionTitle}>Clients ({clients.length})</Text>
             <TouchableOpacity style={styles.addButton} onPress={() => setAddModalVisible(true)}>
@@ -402,12 +414,19 @@ export default function AdminDashboard({ navigation, route }) {
 
         {/* Right Column: Selected Client Dashboard */}
         {selectedClient ? (
-          <View style={[styles.column, styles.rightColumn, { flex: 2 }]}>
+          <View style={[styles.column, !isMobile && styles.rightColumn, { flex: 2, marginBottom: isMobile ? 20 : 0 }]}>
             <ScrollView style={styles.detailScroll}>
               {/* Profile Card */}
               <View style={styles.detailHeaderCard}>
                 <View style={styles.detailTitleRow}>
-                  <Text style={styles.detailName}>{selectedClient.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {isMobile && (
+                      <TouchableOpacity onPress={() => setSelectedClient(null)} style={{ marginRight: 10 }}>
+                        <Text style={{ color: '#E53935', fontSize: 16, fontWeight: 'bold' }}>{'< Back'}</Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text style={styles.detailName}>{selectedClient.name}</Text>
+                  </View>
                   <View style={{ flexDirection: 'row' }}>
                     <TouchableOpacity
                       style={[styles.smallButton, { backgroundColor: '#FFA000', marginRight: 8 }]}
@@ -542,11 +561,11 @@ export default function AdminDashboard({ navigation, route }) {
               )}
             </ScrollView>
           </View>
-        ) : (
-          <View style={[styles.column, styles.rightColumn, styles.centered]}>
+        ) : !isMobile ? (
+          <View style={[styles.column, styles.rightColumn, styles.centered, { flex: 2 }]}>
             <Text style={styles.noSelectionText}>Select a client from the list to manage records and documents.</Text>
           </View>
-        )}
+        ) : null}
       </View>
 
       {/* Add Client Modal */}
@@ -926,15 +945,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
-    padding: Platform.OS === 'web' ? 24 : 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 24
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#161822',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 55 : 25,
+    paddingBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#2A2D3A',
     flexDirection: 'row',
@@ -974,7 +993,7 @@ const styles = StyleSheet.create({
   },
   contentLayout: {
     flex: 1,
-    flexDirection: Platform.OS === 'web' ? 'row' : 'column'
+    padding: 16,
   },
   column: {
     backgroundColor: '#1E1E1E',
@@ -982,10 +1001,9 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: '#292929',
-    marginBottom: Platform.OS === 'web' ? 0 : 20
   },
   rightColumn: {
-    marginLeft: Platform.OS === 'web' ? 20 : 0
+    marginLeft: 20
   },
   listHeaderRow: {
     flexDirection: 'row',
@@ -1192,11 +1210,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.8)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20
+    padding: 16
   },
   modalContent: {
     backgroundColor: '#1E1E1E',
-    width: Platform.OS === 'web' ? '500px' : '100%',
+    width: '100%',
+    maxWidth: 450,
     borderRadius: 12,
     padding: 24,
     borderWidth: 1,

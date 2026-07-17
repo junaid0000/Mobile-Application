@@ -10,7 +10,7 @@ export default function SignupScreen({ navigation }) {
 
   const API_URL = Platform.OS === 'web'
     ? 'http://localhost:5000/api/auth/signup'
-    : 'http://192.168.11.251:5000/api/auth/signup';
+    : 'http://192.168.12.152:5000/api/auth/signup';
 
   const handleSignup = async () => {
     if (!name || !email || !password) {

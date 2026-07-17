@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = Platform.OS === 'web'
   ? 'http://localhost:5000/api'
-  : 'http://192.168.11.251:5000/api';
+  : 'http://192.168.12.152:5000/api';
 
 export default function OfficeChatScreen({ route }) {
   const { user, token } = route?.params || {};
@@ -96,8 +96,20 @@ export default function OfficeChatScreen({ route }) {
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={90}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 90}
     >
+      <View style={styles.topBar}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View>
+            <Image 
+              source={require('../assets/images/logo.png')} 
+              style={styles.logo} 
+              resizeMode="contain" 
+            />
+            <Text style={styles.topBarSub}>Chat Ufficio</Text>
+          </View>
+        </View>
+      </View>
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -127,7 +139,36 @@ export default function OfficeChatScreen({ route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#121212'
+  },
+  topBar: {
+    backgroundColor: '#1E1E1E',
+    paddingTop: Platform.OS === 'ios' ? 45 : 15,
+    paddingBottom: 10,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#292929',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  logo: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  topBarSub: {
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginTop: 2,
   },
   loadingContainer: {
     flex: 1,
@@ -145,59 +186,61 @@ const styles = StyleSheet.create({
   },
   myMessage: {
     alignSelf: 'flex-end',
-    backgroundColor: '#E60000',
-    borderBottomRightRadius: 5,
+    backgroundColor: 'rgba(255,193,7,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,193,7,0.3)',
+    borderBottomRightRadius: 4,
   },
   theirMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 5,
+    backgroundColor: '#1E1E1E',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#333',
+    borderBottomLeftRadius: 4,
   },
   senderName: {
+    color: '#888',
     fontSize: 12,
+    marginBottom: 4,
     fontWeight: 'bold',
-    color: '#666',
-    marginBottom: 2,
   },
   myMessageText: {
+    color: '#FFC107',
     fontSize: 15,
-    color: '#FFFFFF',
   },
   theirMessageText: {
+    color: '#E0E0E0',
     fontSize: 15,
-    color: '#333333',
   },
   timestamp: {
+    color: '#666',
     fontSize: 10,
-    color: '#999',
+    marginTop: 4,
     alignSelf: 'flex-end',
-    marginTop: 5,
   },
   inputContainer: {
     flexDirection: 'row',
     padding: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#161822',
     borderTopWidth: 1,
-    borderColor: '#E0E0E0',
-    alignItems: 'flex-end',
+    borderTopColor: '#2A2D3A',
   },
   input: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#1E1E1E',
+    borderWidth: 1,
+    borderColor: '#333',
     borderRadius: 20,
     paddingHorizontal: 15,
     paddingVertical: 10,
+    marginRight: 10,
     fontSize: 15,
-    maxHeight: 100,
+    color: '#FFF',
   },
   sendButton: {
-    marginLeft: 10,
-    backgroundColor: '#E60000',
+    backgroundColor: '#E53935',
     borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -8,8 +8,11 @@ import socket
 import threading
 
 # --- CONFIGURATION ---
-# Network UNC path to the live backend database on the server
-BACKEND_NETWORK_PATH = r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb"
+# Network path to the live backend database on the server
+# Using mapped drive letter Z: (more reliable with Access ODBC driver under Administrator)
+# To map: run this in Admin terminal: net use Z: \\192.168.12.250\Agenda_Vendita
+BACKEND_NETWORK_PATH = r"Z:\Gestione VN2_be.accdb"
+BACKEND_NETWORK_UNC  = r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb"
 
 # Local fallback path to the backend database (for development or local testing)
 BACKEND_LOCAL_PATH   = r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb"
@@ -84,12 +87,21 @@ def fetch_access_data(db_path):
                 if 'annull' in c_lower or 'cancell' in c_lower or 'cancel' in c_lower or 'elimina' in c_lower:
                     cancel_col = col
                     break
+
+            tipo_col = None
+            for col in columns:
+                c_lower = col.lower()
+                if c_lower == 'tipo' or 'tipologia' in c_lower or c_lower == 'tipoappuntamento' or c_lower == 'type':
+                    tipo_col = col
+                    break
             
             select_cols = ["Indice", "Cliente", "Venditore", "AppuntVendita", "FasciaOrariaVendita"]
             if note_col:
                 select_cols.append(f"[{note_col}]")
             if cancel_col:
                 select_cols.append(f"[{cancel_col}]")
+            if tipo_col:
+                select_cols.append(f"[{tipo_col}]")
                 
             query = f"SELECT {', '.join(select_cols)} FROM [Appuntamenti] WHERE Indice IS NOT NULL;"
             cursor.execute(query)
@@ -105,6 +117,7 @@ def fetch_access_data(db_path):
                 
                 note = None
                 cancellato = False
+                tipo = None
                 
                 current_idx = 5
                 if note_col:
@@ -118,6 +131,9 @@ def fetch_access_data(db_path):
                         cancellato = (val != 0)
                     elif val is not None:
                         cancellato = str(val).strip().lower() in ('true', 'yes', 'si', '-1', '1')
+                    current_idx += 1
+                if tipo_col:
+                    tipo = str(row[current_idx]).strip() if row[current_idx] is not None else None
                 
                 # Combine Date and Time
                 data_ora = None
@@ -154,7 +170,7 @@ def fetch_access_data(db_path):
                         except ValueError:
                             data_ora = dt
                             
-                data.append((interno, cliente, venditore, data_ora, luogo, note, cancellato))
+                data.append((interno, cliente, venditore, data_ora, luogo, note, cancellato, tipo))
         else:
             print("[Sync] Appuntamenti table not found. Using fallback Database1 table...")
             # Try querying with [Sede], [Data fatturazione CE], [Testo3]
@@ -228,7 +244,7 @@ def fetch_access_data(db_path):
                         except ValueError:
                             data_ora = dt
                 
-                data.append((interno, cliente, venditore, data_ora, luogo, None, False))
+                data.append((interno, cliente, venditore, data_ora, luogo, None, False, None))
         return data
     except Exception as e:
         print(f"Error connecting or reading Access DB ({os.path.basename(db_path)}): {e}")
@@ -272,7 +288,7 @@ def upsert_to_postgresql(data):
         cursor = pg_conn.cursor()
         
         upsert_query = """
-            INSERT INTO public.appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato)
+            INSERT INTO public.appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo)
             VALUES %s
             ON CONFLICT (intorno) 
             DO UPDATE SET 
@@ -282,6 +298,7 @@ def upsert_to_postgresql(data):
                 luogo = EXCLUDED.luogo,
                 note = EXCLUDED.note,
                 cancellato = EXCLUDED.cancellato,
+                tipo = EXCLUDED.tipo,
                 last_sync = CURRENT_TIMESTAMP;
         """
         
@@ -304,10 +321,19 @@ def main():
             data = None
             db_path = None
             
-            # 1. Try syncing from the network server database first if SMB is active
-            if check_network_host("192.168.12.250", port=445, timeout=1.0):
-                print(f"[Sync] Server online. Trying network path: {BACKEND_NETWORK_PATH}")
+            # 1. Try syncing from the network server database first
+            # Check via socket if server is up AND the mapped drive file exists
+            server_reachable = check_network_host("192.168.12.250", port=445, timeout=1.0)
+            drive_file_exists = os.path.exists(BACKEND_NETWORK_PATH)
+            
+            if server_reachable and drive_file_exists:
+                print(f"[Sync] Server online + drive mapped. Trying: {BACKEND_NETWORK_PATH}")
                 db_path = BACKEND_NETWORK_PATH
+                data = fetch_access_data(db_path)
+            elif server_reachable and not drive_file_exists:
+                print(f"[Sync] Server online but drive Z: not mapped. Run: net use Z: \\\\192.168.12.250\\Agenda_Vendita")
+                print(f"[Sync] Falling back to UNC path directly...")
+                db_path = BACKEND_NETWORK_UNC
                 data = fetch_access_data(db_path)
                 
             # 2. Fall back to the local database file if network is unreachable or fetched no data

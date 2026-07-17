@@ -18,7 +18,7 @@ import axios from 'axios';
 
 const BASE_URL = Platform.OS === 'web'
   ? 'http://localhost:5000'
-  : 'http://192.168.11.251:5000';
+  : 'http://192.168.12.152:5000';
 
 // ─── Color Theme (matching app-wide design) ─────────────────────────────────
 const T = {
@@ -236,19 +236,19 @@ const dropStyles = StyleSheet.create({
 export default function AppointmentsScreen({ navigation, route }) {
   const { user, token } = route?.params || {};
   const userRole = user?.role || 'client';
-  
+
   // Guard safeguard to check if the user is an admin by role, name, or email
   const nameLower = user?.name ? user.name.toLowerCase() : '';
   const emailLower = user?.email ? user.email.toLowerCase() : '';
   const isAdminUser = userRole === 'admin' ||
-                      nameLower.includes('lorenzo') ||
-                      nameLower.includes('junaid') ||
-                      nameLower.includes('francesco') ||
-                      nameLower.includes('valentina') ||
-                      emailLower.includes('lorenzo') ||
-                      emailLower.includes('junaid') ||
-                      emailLower.includes('francesco') ||
-                      emailLower.includes('valentina');
+    nameLower.includes('lorenzo') ||
+    nameLower.includes('junaid') ||
+    nameLower.includes('francesco') ||
+    nameLower.includes('valentina') ||
+    emailLower.includes('lorenzo') ||
+    emailLower.includes('junaid') ||
+    emailLower.includes('francesco') ||
+    emailLower.includes('valentina');
 
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -257,8 +257,13 @@ export default function AppointmentsScreen({ navigation, route }) {
   const [sellersList, setSellersList] = useState([]);
   const [selectedSeller, setSelectedSeller] = useState('__ALL__'); // default depends on role
   const [activeNotification, setActiveNotification] = useState(null);
+  const [expandedNotes, setExpandedNotes] = useState({});
 
   const notifiedApptsRef = useRef(new Set());
+
+  const toggleNote = (id) => {
+    setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Check for appointments scheduled exactly in 30 minutes (28 to 31 min window)
   const checkUpcomingNotifications = useCallback((list) => {
@@ -266,22 +271,22 @@ export default function AppointmentsScreen({ navigation, route }) {
     const now = new Date();
     list.forEach(appt => {
       if (!appt.data_ora || appt.cancellato) return;
-      
+
       const apptTime = new Date(appt.data_ora);
       const diffMs = apptTime.getTime() - now.getTime();
       const diffMinutes = Math.round(diffMs / (1000 * 60));
-      
+
       // Trigger notification if appointment is 30 mins away and not notified yet
       if (diffMinutes >= 28 && diffMinutes <= 31 && !notifiedApptsRef.current.has(appt.intorno)) {
         notifiedApptsRef.current.add(appt.intorno);
-        
+
         setActiveNotification({
           id: appt.intorno,
           client: appt.cliente || 'Cliente',
           time: formatTime(appt.data_ora),
           seller: appt.venditore || 'Venditore'
         });
-        
+
         // Auto dismiss after 10 seconds
         setTimeout(() => {
           setActiveNotification(null);
@@ -315,7 +320,7 @@ export default function AppointmentsScreen({ navigation, route }) {
       const list = res.data.appointments || [];
       setAppointments(list);
       checkUpcomingNotifications(list);
-      
+
       if (!sellerCode && res.data.seller_code) {
         setSellerCode(res.data.seller_code);
       }
@@ -372,14 +377,6 @@ export default function AppointmentsScreen({ navigation, route }) {
     await fetchSellersList();
     await fetchAppointments(selectedSeller);
     setRefreshing(false);
-  };
-
-  // Helper date formatting functions for line-by-line layout
-  const getDayOfWeek = (dateStr) => {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
-    const day = d.toLocaleDateString('it-IT', { weekday: 'short' });
-    return day.replace('.', '').toUpperCase(); // Remove dot, uppercase
   };
 
   const getDateString = (dateStr) => {
@@ -440,18 +437,18 @@ export default function AppointmentsScreen({ navigation, route }) {
       <View style={s.topBar}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {navigation?.canGoBack() && (
-            <TouchableOpacity 
-              onPress={() => navigation.goBack()} 
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
               style={{ marginRight: 15, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 }}
             >
               <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>◀</Text>
             </TouchableOpacity>
           )}
           <View>
-            <Image 
-              source={require('../assets/images/logo.png')} 
-              style={s.logo} 
-              resizeMode="contain" 
+            <Image
+              source={require('../assets/images/logo.png')}
+              style={s.logo}
+              resizeMode="contain"
             />
             <Text style={s.topBarSub}>Appuntamenti</Text>
           </View>
@@ -463,8 +460,8 @@ export default function AppointmentsScreen({ navigation, route }) {
             </Text>
           </View>
           {!navigation?.canGoBack() && (
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('Login')} 
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Login')}
               style={{ marginLeft: 10, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(229,57,53,0.12)', borderColor: 'rgba(229,57,53,0.3)', borderWidth: 1, borderRadius: 8 }}
             >
               <Text style={{ color: '#E53935', fontSize: 12, fontWeight: 'bold' }}>Esci 🚪</Text>
@@ -516,13 +513,12 @@ export default function AppointmentsScreen({ navigation, route }) {
         ) : (
           /* Line by Line Appointment list */
           displayedAppointments.map((appt, idx) => (
-            <View 
-              key={`${appt.intorno}-${idx}`} 
+            <View
+              key={`${appt.intorno}-${idx}`}
               style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
             >
-              {/* Left: Day, Date & Year Block */}
+              {/* Left: Date & Year Block */}
               <View style={s.dateBlock}>
-                <Text style={s.dayText}>{getDayOfWeek(appt.data_ora)}</Text>
                 <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
                 <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
               </View>
@@ -534,8 +530,8 @@ export default function AppointmentsScreen({ navigation, route }) {
                     🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
                   </Text>
                 </View>
-                <Text 
-                  style={[s.clientText, appt.cancellato && s.clientTextCancelled]} 
+                <Text
+                  style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
                   numberOfLines={1}
                 >
                   {appt.cliente || 'Cliente Sconosciuto'}
@@ -544,9 +540,15 @@ export default function AppointmentsScreen({ navigation, route }) {
                   📍 {appt.luogo || 'Sede non specificata'}
                 </Text>
                 {appt.note ? (
-                  <Text style={s.noteText} numberOfLines={2}>
-                    📝 {appt.note}
-                  </Text>
+                  expandedNotes[appt.intorno] ? (
+                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+                      <Text style={s.noteText}>📝 {appt.note}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+                      <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
+                    </TouchableOpacity>
+                  )
                 ) : null}
               </View>
 
@@ -560,6 +562,11 @@ export default function AppointmentsScreen({ navigation, route }) {
                     <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
                   </View>
                 )}
+                {appt.tipo ? (
+                  <View style={s.tipoBadge}>
+                    <Text style={s.tipoText}>{appt.tipo}</Text>
+                  </View>
+                ) : null}
                 {appt.cancellato && (
                   <View style={s.cancelledBadge}>
                     <Text style={s.cancelledText}>✓ Annullato</Text>
@@ -715,11 +722,8 @@ const s = StyleSheet.create({
     paddingRight: 10,
   },
   dayText: {
-    color: T.textSecondary,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    // kept for potential future use
+    display: 'none',
   },
   dateText: {
     color: T.yellow,
@@ -801,6 +805,13 @@ const s = StyleSheet.create({
     marginTop: 4,
     fontStyle: 'italic',
   },
+  seeNoteText: {
+    color: T.yellow,
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   cancelledBadge: {
     backgroundColor: 'rgba(16,185,129,0.12)',
     borderColor: 'rgba(16,185,129,0.3)',
@@ -813,6 +824,21 @@ const s = StyleSheet.create({
     color: T.green,
     fontSize: 10,
     fontWeight: '700',
+  },
+  tipoBadge: {
+    backgroundColor: 'rgba(99,102,241,0.12)',
+    borderColor: 'rgba(99,102,241,0.3)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    maxWidth: 80,
+  },
+  tipoText: {
+    color: '#818cf8',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   notificationBanner: {
     position: 'absolute',

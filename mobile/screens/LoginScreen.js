@@ -9,7 +9,7 @@ export default function LoginScreen({ navigation }) {
 
   const API_URL = Platform.OS === 'web'
     ? 'http://localhost:5000/api/auth/login'
-    : 'http://192.168.11.251:5000/api/auth/login';
+    : 'http://192.168.12.152:5000/api/auth/login';
 
   const handleLogin = async () => {
     if (!email || !password) {

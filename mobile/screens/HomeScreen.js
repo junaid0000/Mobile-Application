@@ -19,7 +19,7 @@ import * as WebBrowser from 'expo-web-browser';
 
 const BASE_URL = Platform.OS === 'web'
   ? 'http://localhost:5000'
-  : 'http://192.168.11.251:5000';
+  : 'http://192.168.12.152:5000';
 
 // ─── Color Theme ─────────────────────────────────────────────────────────────
 const T = {
@@ -320,6 +320,40 @@ export default function HomeScreen({ navigation, route }) {
                 <Text style={styles.detailLabel}>🔑 NUMERO DI TELAIO (VIN)</Text>
                 <Text style={styles.detailVal}>{selectedVehicle.vin || '—'}</Text>
               </View>
+            </View>
+
+            <View style={{ height: 1, backgroundColor: T.border, marginVertical: 15 }} />
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  backgroundColor: T.red,
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={() => WebBrowser.openBrowserAsync('https://www.rossomandi.com/contatti')}
+              >
+                <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>📅 Prenota Servizio / Tagliando</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  backgroundColor: T.surfaceAlt,
+                  borderWidth: 1,
+                  borderColor: T.border,
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={() => WebBrowser.openBrowserAsync('tel:0574402611')}
+              >
+                <Text style={{ color: T.textPrimary, fontWeight: 'bold', fontSize: 13 }}>📞 Chiama Assistenza</Text>
+              </TouchableOpacity>
             </View>
           </View>
 

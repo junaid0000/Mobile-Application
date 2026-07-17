@@ -85,7 +85,7 @@ export default function MainTabNavigator({ route }) {
         tabBarShowLabel: false,
       }}
     >
-      {/* ── TAB 1: Clients / HomeScreen (Only for Clients) ─────────────────────────── */}
+      {/* ── TAB 1: Garage / HomeScreen (Only for Clients) ─────────────────────────── */}
       {isClient && (
         <Tab.Screen
           name="Clients"
@@ -93,7 +93,7 @@ export default function MainTabNavigator({ route }) {
           initialParams={{ user, token }}
           options={{
             tabBarIcon: ({ focused }) => (
-              <TabIcon emoji="👤" label="Clients" focused={focused} />
+              <TabIcon emoji="🚘" label="Garage" focused={focused} />
             ),
           }}
         />

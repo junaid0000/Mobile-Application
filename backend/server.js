@@ -59,6 +59,7 @@ const initDb = async () => {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_appointments_venditore ON appointments(venditore);`);
     await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS note TEXT;`);
     await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS cancellato BOOLEAN DEFAULT FALSE;`);
+    await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tipo VARCHAR(100);`);
     
     // Promote administration users to admin role dynamically
     await db.query(`
@@ -611,7 +612,7 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
     const filterVenditore = req.query.venditore;
 
     // 3. Fetch appointments
-    let queryText = 'SELECT intorno, cliente, venditore, data_ora, luogo, note, cancellato FROM appointments';
+    let queryText = 'SELECT intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo FROM appointments';
     let queryParams = [];
 
     if (isAdminUser) {
@@ -667,7 +668,7 @@ app.get('/api/seller/sellers-list', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const result = await db.query('SELECT DISTINCT venditore FROM appointments WHERE venditore IS NOT NULL ORDER BY venditore ASC');
+    const result = await db.query('SELECT DISTINCT UPPER(venditore) AS venditore FROM appointments WHERE venditore IS NOT NULL ORDER BY venditore ASC');
     res.json({ sellers: result.rows.map(r => r.venditore) });
   } catch (err) {
     console.error(err.message);
