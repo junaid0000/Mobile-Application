@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import AdminDashboard from './screens/AdminDashboard';
+import SellerDashboard from './screens/SellerDashboard';
 import AppointmentsScreen from './screens/AppointmentsScreen';
 import OfficeChatScreen from './screens/OfficeChatScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
@@ -28,6 +29,9 @@ export default function App() {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Signup" component={SignupScreen} />
 
+          {/* Seller / Staff Dashboard */}
+          <Stack.Screen name="SellerDashboard" component={SellerDashboard} />
+
           {/* Client: 3-tab bottom navigation */}
           <Stack.Screen
             name="MainTabs"
@@ -35,7 +39,7 @@ export default function App() {
             options={{ animation: 'fade' }}
           />
 
-          {/* Admin: full-screen dashboard (unchanged) */}
+          {/* Admin: full-screen dashboard */}
           <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
           
           {/* Admin Appointments view stack entry */}
@@ -45,17 +49,7 @@ export default function App() {
           <Stack.Screen 
             name="OfficeChat" 
             component={OfficeChatScreen} 
-            options={{ 
-              headerShown: true, 
-              headerTitle: () => (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Image source={require('./assets/images/logo.png')} style={{ width: 40, height: 40, borderRadius: 20, overflow: 'hidden', marginRight: 10 }} resizeMode="contain" />
-                  <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>Chat Ufficio</Text>
-                </View>
-              ),
-              headerStyle: { backgroundColor: '#E60000' }, 
-              headerTintColor: '#fff' 
-            }} 
+            options={{ headerShown: false }} 
           />
         </Stack.Navigator>
       </NavigationContainer>

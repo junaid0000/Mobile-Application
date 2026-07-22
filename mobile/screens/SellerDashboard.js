@@ -13,14 +13,13 @@ import {
   Alert,
   ActivityIndicator,
   useWindowDimensions,
-  FlatList,
   SafeAreaView,
   StatusBar,
 } from 'react-native';
 import axios from 'axios';
 import { BASE_URL } from '../config/apiConfig';
 
-export default function AdminDashboard({ navigation, route }) {
+export default function SellerDashboard({ navigation, route }) {
   const { user, token } = route.params || {};
 
   const { width } = useWindowDimensions();
@@ -34,31 +33,16 @@ export default function AdminDashboard({ navigation, route }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
 
-  // Seller Management state
-  const [sellersModalVisible, setSellersModalVisible] = useState(false);
-  const [usersList, setUsersList] = useState([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-
-  // Add/Edit Seller Form state
-  const [editUserModalVisible, setEditUserModalVisible] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null); // null if adding new
-  const [formName, setFormName] = useState('');
-  const [formEmail, setFormEmail] = useState('');
-  const [formPassword, setFormPassword] = useState('');
-  const [formRole, setFormRole] = useState('seller'); // 'seller' | 'admin'
-  const [formSellerCode, setFormSellerCode] = useState('');
-  const [savingUser, setSavingUser] = useState(false);
-
   // Settings toggles
   const [darkMode, setDarkMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [language, setLanguage] = useState('IT'); // 'IT' | 'EN'
 
   const t = {
-    welcome: language === 'IT' ? 'Benvenuto, Amministratore!' : 'Welcome, Administrator!',
+    welcome: language === 'IT' ? `Benvenuto, ${user?.name || 'Venditore'}!` : `Welcome, ${user?.name || 'Seller'}!`,
+    subWelcome: language === 'IT' ? 'Pannello di controllo venditori e staff' : 'Sales and staff control panel',
     appointments: language === 'IT' ? 'Appuntamenti' : 'Appointments',
     officeChat: language === 'IT' ? 'Chat Ufficio' : 'Office Chat',
-    manageSellers: language === 'IT' ? 'Gestione Venditori' : 'Manage Sellers',
     settings: language === 'IT' ? 'Impostazioni' : 'Settings',
     changePassword: language === 'IT' ? 'Modifica Password' : 'Change Password',
     darkMode: language === 'IT' ? 'Modalità Scura' : 'Dark Mode',
@@ -73,116 +57,6 @@ export default function AdminDashboard({ navigation, route }) {
     currPass: language === 'IT' ? 'Password attuale' : 'Current password',
     newPass: language === 'IT' ? 'Nuova password' : 'New password',
     confPass: language === 'IT' ? 'Conferma nuova password' : 'Confirm new password',
-  };
-
-  const fetchUsers = async () => {
-    setLoadingUsers(true);
-    try {
-      const res = await axios.get(`${BASE_URL}/api/admin/users`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUsersList(res.data.users || res.data || []);
-    } catch (err) {
-      console.error('Error fetching users:', err.message);
-      Alert.alert('Errore', 'Impossibile caricare gli utenti. Controlla la connessione.');
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
-  const openAddUserModal = () => {
-    setSelectedUser(null);
-    setFormName('');
-    setFormEmail('');
-    setFormPassword('');
-    setFormRole('seller');
-    setFormSellerCode('');
-    setEditUserModalVisible(true);
-  };
-
-  const openEditUserModal = (usr) => {
-    setSelectedUser(usr);
-    setFormName(usr.name || '');
-    setFormEmail(usr.email || '');
-    setFormPassword('');
-    setFormRole(usr.role || 'seller');
-    setFormSellerCode(usr.venditore_code || '');
-    setEditUserModalVisible(true);
-  };
-
-  const handleSaveUser = async () => {
-    if (!formName || !formEmail) {
-      Alert.alert('Errore', 'Inserisci nome ed email');
-      return;
-    }
-    if (!selectedUser && !formPassword) {
-      Alert.alert('Errore', 'La password è obbligatoria per i nuovi utenti');
-      return;
-    }
-
-    setSavingUser(true);
-    try {
-      if (selectedUser) {
-        // Update user
-        await axios.put(
-          `${BASE_URL}/api/admin/users/${selectedUser.id}`,
-          { name: formName, email: formEmail, role: formRole, venditore_code: formSellerCode, password: formPassword },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        Alert.alert('Successo', 'Utente aggiornato con successo');
-      } else {
-        // Create user
-        await axios.post(
-          `${BASE_URL}/api/admin/users`,
-          { name: formName, email: formEmail, role: formRole, venditore_code: formSellerCode, password: formPassword },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        Alert.alert('Successo', 'Nuovo utente creato con successo');
-      }
-      setEditUserModalVisible(false);
-      fetchUsers();
-    } catch (err) {
-      Alert.alert('Errore', err.response?.data?.error || 'Impossibile salvare l\'utente');
-    } finally {
-      setSavingUser(false);
-    }
-  };
-
-  const handleDeleteUser = async (userId, userName) => {
-    const doDelete = async () => {
-      try {
-        await axios.delete(`${BASE_URL}/api/admin/users/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (Platform.OS === 'web') {
-          alert('Utente eliminato con successo');
-        } else {
-          Alert.alert('Successo', 'Utente eliminato');
-        }
-        fetchUsers();
-      } catch (err) {
-        if (Platform.OS === 'web') {
-          alert(err.response?.data?.error || 'Impossibile eliminare l\'utente');
-        } else {
-          Alert.alert('Errore', err.response?.data?.error || 'Impossibile eliminare l\'utente');
-        }
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Sei sicuro di voler eliminare l'utente "${userName}"?`)) {
-        doDelete();
-      }
-    } else {
-      Alert.alert(
-        'Conferma Eliminazione',
-        `Sei sicuro di voler eliminare l'utente "${userName}"?`,
-        [
-          { text: 'Annulla', style: 'cancel' },
-          { text: 'Elimina', style: 'destructive', onPress: doDelete }
-        ]
-      );
-    }
   };
 
   const handleChangePassword = async () => {
@@ -230,7 +104,6 @@ export default function AdminDashboard({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
       {/* ── Top Header ────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.drawerButton} onPress={() => setDrawerVisible(true)}>
@@ -246,55 +119,39 @@ export default function AdminDashboard({ navigation, route }) {
 
       {/* ── Centered Main Content ─────────────────────────────────────── */}
       <View style={styles.mainContent}>
-        <View style={styles.centeredContainer}>
-          <Text style={styles.middleWelcomeTitle}>{t.welcome}</Text>
+        <Text style={styles.middleWelcomeTitle}>{t.welcome}</Text>
+        <Text style={styles.subWelcomeText}>{t.subWelcome}</Text>
 
-          <View style={[styles.buttonsStack, { maxWidth: isMobile ? '88%' : 320, width: '100%' }]}>
-            {/* Button 1: Appuntamenti */}
-            <TouchableOpacity
-              style={styles.clay3DButton}
-              activeOpacity={0.85}
-              onPress={() => navigation.navigate('Appointments', { user, token })}
-            >
-              <View style={styles.clayButtonInner}>
-                <Text style={styles.clayButtonEmoji}>📅</Text>
-                <Text style={styles.clayButtonText}>{t.appointments}</Text>
-              </View>
-            </TouchableOpacity>
+        <View style={[styles.buttonsStack, { maxWidth: isMobile ? '88%' : 320, width: '100%' }]}>
+          {/* Button 1: Appuntamenti */}
+          <TouchableOpacity
+            style={styles.clay3DButton}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Appointments', { user, token })}
+          >
+            <View style={styles.clayButtonInner}>
+              <Text style={styles.clayButtonEmoji}>📅</Text>
+              <Text style={styles.clayButtonText}>{t.appointments}</Text>
+            </View>
+          </TouchableOpacity>
 
-            {/* Button 2: Chat Ufficio */}
-            <TouchableOpacity
-              style={[styles.clay3DButton, styles.clay3DButtonDarker]}
-              activeOpacity={0.85}
-              onPress={() => navigation.navigate('OfficeChat', { user, token })}
-            >
-              <View style={styles.clayButtonInner}>
-                <Text style={styles.clayButtonEmoji}>💬</Text>
-                <Text style={styles.clayButtonText}>{t.officeChat}</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Button 3: Gestione Venditori */}
-            <TouchableOpacity
-              style={[styles.clay3DButton, styles.clay3DButtonPurple]}
-              activeOpacity={0.85}
-              onPress={() => {
-                setSellersModalVisible(true);
-                fetchUsers();
-              }}
-            >
-              <View style={styles.clayButtonInner}>
-                <Text style={styles.clayButtonEmoji}>👥</Text>
-                <Text style={styles.clayButtonText}>{t.manageSellers}</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
+          {/* Button 2: Chat Ufficio */}
+          <TouchableOpacity
+            style={[styles.clay3DButton, styles.clay3DButtonDarker]}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('OfficeChat', { user, token })}
+          >
+            <View style={styles.clayButtonInner}>
+              <Text style={styles.clayButtonEmoji}>💬</Text>
+              <Text style={styles.clayButtonText}>{t.officeChat}</Text>
+            </View>
+          </TouchableOpacity>
         </View>
+      </View>
 
-        {/* ── Footer ──────────────────────────────────────────────── */}
-        <View style={styles.footerContainer}>
-          <Text style={styles.footerText}>Rossomandi Automotive © 2026 • v1.0.4</Text>
-        </View>
+      {/* ── Footer pinned at bottom ──────────────────────────────────── */}
+      <View style={styles.footerContainer}>
+        <Text style={styles.footerText}>Rossomandi Automotive © 2026 • v1.0.4</Text>
       </View>
 
       {/* ── Left-Side Slide-Out Drawer Modal ──────────────────────────── */}
@@ -322,10 +179,10 @@ export default function AdminDashboard({ navigation, route }) {
                   <Text style={{ fontSize: 24 }}>👤</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.profileName}>{user?.name || 'Amministratore'}</Text>
-                  <Text style={styles.profileEmail}>{user?.email || 'admin@rossomandi.com'}</Text>
+                  <Text style={styles.profileName}>{user?.name || 'Venditore'}</Text>
+                  <Text style={styles.profileEmail}>{user?.email || ''}</Text>
                   <View style={styles.roleTagBadge}>
-                    <Text style={styles.roleTagBadgeText}>{user?.role?.toUpperCase() || 'ADMIN'}</Text>
+                    <Text style={styles.roleTagBadgeText}>#{user?.venditore_code || user?.role?.toUpperCase() || 'VENDITORE'}</Text>
                   </View>
                 </View>
               </View>
@@ -410,147 +267,6 @@ export default function AdminDashboard({ navigation, route }) {
         </View>
       </Modal>
 
-      {/* ── Gestione Venditori (Sellers Management Modal) ──────────────── */}
-      <Modal
-        visible={sellersModalVisible}
-        animationType="slide"
-        transparent={true}
-        statusBarTranslucent={true}
-        onRequestClose={() => setSellersModalVisible(false)}
-      >
-        <SafeAreaView style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)' }}>
-          <View style={styles.dialogOverlay}>
-          <View style={[styles.dialogBox, { width: '92%', maxWidth: 500, maxHeight: '85%' }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={styles.dialogTitle}>👥 Gestione Utenti e Venditori</Text>
-              <TouchableOpacity onPress={() => setSellersModalVisible(false)} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.addUserBtn} onPress={openAddUserModal}>
-              <Text style={styles.addUserBtnText}>➕ Aggiungi Nuovo Venditore / Admin</Text>
-            </TouchableOpacity>
-
-            {loadingUsers ? (
-              <ActivityIndicator size="large" color="#FF5500" style={{ marginVertical: 30 }} />
-            ) : (
-              <FlatList
-                data={usersList}
-                keyExtractor={(item) => item.id.toString()}
-                style={{ marginTop: 10 }}
-                renderItem={({ item }) => (
-                  <View style={styles.userCardItem}>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.userNameText}>{item.name}</Text>
-                        {item.role === 'admin' ? (
-                          <View style={styles.adminBadge}><Text style={styles.badgeText}>ADMIN</Text></View>
-                        ) : (
-                          <View style={styles.sellerBadge}><Text style={styles.badgeText}>#{item.venditore_code || 'VEND'}</Text></View>
-                        )}
-                      </View>
-                      <Text style={styles.userEmailText}>{item.email}</Text>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <TouchableOpacity onPress={() => openEditUserModal(item)} style={styles.actionIconBtn}>
-                        <Text style={{ fontSize: 16 }}>✏️</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDeleteUser(item.id, item.name)} style={styles.actionIconBtn}>
-                        <Text style={{ fontSize: 16 }}>🗑️</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              />
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
-
-      {/* ── Add / Edit User Sub-Modal ─────────────────────────────────── */}
-      <Modal
-        visible={editUserModalVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setEditUserModalVisible(false)}
-      >
-        <View style={styles.dialogOverlay}>
-          <View style={[styles.dialogBox, { width: '90%', maxWidth: 420 }]}>
-            <Text style={styles.dialogTitle}>
-              {selectedUser ? '✏️ Modifica Utente' : '➕ Nuovo Venditore / Admin'}
-            </Text>
-
-            <TextInput
-              style={styles.dialogInput}
-              placeholder="Nome e Cognome"
-              placeholderTextColor="#888"
-              value={formName}
-              onChangeText={setFormName}
-            />
-            <TextInput
-              style={styles.dialogInput}
-              placeholder="Email Ufficiale"
-              placeholderTextColor="#888"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={formEmail}
-              onChangeText={setFormEmail}
-            />
-            <TextInput
-              style={styles.dialogInput}
-              placeholder={selectedUser ? "Nuova Password (lascia vuoto per non cambiare)" : "Password"}
-              placeholderTextColor="#888"
-              secureTextEntry
-              value={formPassword}
-              onChangeText={setFormPassword}
-            />
-
-            {/* Role Pills */}
-            <View style={{ flexDirection: 'row', gap: 8, marginVertical: 10 }}>
-              <TouchableOpacity 
-                style={[styles.rolePill, formRole === 'seller' && styles.rolePillActive]}
-                onPress={() => setFormRole('seller')}
-              >
-                <Text style={[styles.rolePillText, formRole === 'seller' && styles.rolePillTextActive]}>💼 Venditore</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.rolePill, formRole === 'admin' && styles.rolePillActive]}
-                onPress={() => setFormRole('admin')}
-              >
-                <Text style={[styles.rolePillText, formRole === 'admin' && styles.rolePillTextActive]}>👑 Admin</Text>
-              </TouchableOpacity>
-            </View>
-
-            {formRole === 'seller' && (
-              <TextInput
-                style={[styles.dialogInput, { borderColor: '#FF5500' }]}
-                placeholder="Codice Venditore (es. GC, MR, AP)"
-                placeholderTextColor="#FF9966"
-                autoCapitalize="characters"
-                value={formSellerCode}
-                onChangeText={setFormSellerCode}
-              />
-            )}
-
-            <View style={styles.dialogBtnRow}>
-              <TouchableOpacity style={styles.dialogCancelBtn} onPress={() => setEditUserModalVisible(false)}>
-                <Text style={styles.dialogCancelText}>{t.cancel}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.dialogSubmitBtn} onPress={handleSaveUser} disabled={savingUser}>
-                {savingUser ? (
-                  <ActivityIndicator color="#FFF" size="small" />
-                ) : (
-                  <Text style={styles.dialogSubmitText}>{t.save}</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* ── Change Password Dialog Box ────────────────────────────────── */}
       <Modal
         visible={passwordModalVisible}
@@ -559,7 +275,7 @@ export default function AdminDashboard({ navigation, route }) {
         onRequestClose={() => setPasswordModalVisible(false)}
       >
         <View style={styles.dialogOverlay}>
-          <View style={[styles.dialogBox, { maxWidth: isMobile ? '90%' : 400 }]}>
+          <View style={[styles.dialogBox, { width: '90%', maxWidth: 400 }]}>
             <Text style={styles.dialogTitle}>🔒 {t.changePassword}</Text>
 
             <TextInput
@@ -627,17 +343,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,85,0,0.1)',
   },
   drawerButton: {
     padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 8,
   },
   hamburgerIcon: {
     color: '#FFF',
-    fontSize: 22,
+    fontSize: 24,
   },
   logo: {
     width: 180,
@@ -645,28 +357,29 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingBottom: 30,
-    alignItems: 'center',
-  },
-  centeredContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    width: '100%',
+    paddingHorizontal: 24,
   },
   middleWelcomeTitle: {
     color: '#FFFFFF',
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 6,
+  },
+  subWelcomeText: {
+    color: '#A0AEC0',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 36,
   },
   buttonsStack: {
     width: '100%',
     gap: 14,
   },
+
+  /* Professional Compact Buttons */
   clay3DButton: {
     backgroundColor: '#FF5500',
     borderRadius: 14,
@@ -688,12 +401,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#0D0F1A',
     borderTopColor: 'rgba(255,255,255,0.06)',
   },
-  clay3DButtonPurple: {
-    backgroundColor: '#5C1A8A',
-    shadowColor: '#6A1B9A',
-    borderBottomColor: '#3A0F5A',
-    borderTopColor: 'rgba(180,100,255,0.25)',
-  },
   clayButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -709,14 +416,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.6,
   },
+
+  /* Footer */
   footerContainer: {
+    paddingVertical: 10,
+    paddingBottom: 16,
     alignItems: 'center',
-    paddingTop: 16,
   },
   footerText: {
-    color: '#666',
+    color: '#4A5568',
     fontSize: 12,
+    textAlign: 'center',
   },
+
+  /* Drawer Modal */
   drawerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',
@@ -831,6 +544,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
   },
+
+  /* Dialog Modal */
   dialogOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
@@ -884,83 +599,6 @@ const styles = StyleSheet.create({
   },
   dialogSubmitText: {
     color: '#FFF',
-    fontWeight: 'bold',
-  },
-  addUserBtn: {
-    backgroundColor: '#6A1B9A',
-    borderRadius: 10,
-    padding: 14,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  addUserBtnText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  userCardItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#11131C',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#2A2D3A',
-  },
-  userNameText: {
-    color: '#FFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  userEmailText: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  adminBadge: {
-    backgroundColor: 'rgba(229,57,53,0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  sellerBadge: {
-    backgroundColor: 'rgba(255,85,0,0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  badgeText: {
-    color: '#FF5500',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  actionIconBtn: {
-    padding: 6,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 6,
-  },
-  rolePill: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#11131C',
-    borderWidth: 1,
-    borderColor: '#2A2D3A',
-    alignItems: 'center',
-  },
-  rolePillActive: {
-    backgroundColor: 'rgba(255,85,0,0.18)',
-    borderColor: '#FF5500',
-  },
-  rolePillText: {
-    color: '#888',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  rolePillTextActive: {
-    color: '#FF5500',
     fontWeight: 'bold',
   },
 });

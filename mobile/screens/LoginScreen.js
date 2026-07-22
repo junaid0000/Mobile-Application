@@ -1,15 +1,30 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform, Image } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Platform,
+  Image,
+  KeyboardAvoidingView,
+  ScrollView,
+  SafeAreaView,
+  Dimensions,
+} from 'react-native';
 import axios from 'axios';
+import { BASE_URL } from '../config/apiConfig';
+
+const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const API_URL = Platform.OS === 'web'
-    ? 'http://localhost:5000/api/auth/login'
-    : 'http://192.168.12.152:5000/api/auth/login';
+  const API_URL = `${BASE_URL}/api/auth/login`;
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -24,7 +39,7 @@ export default function LoginScreen({ navigation }) {
       if (user.role === 'admin') {
         navigation.navigate('AdminDashboard', { user, token });
       } else {
-        navigation.navigate('MainTabs', { user, token });
+        navigation.navigate('SellerDashboard', { user, token });
       }
     } catch (error) {
       Alert.alert('Login Failed', error.response?.data?.error || 'Network error');
@@ -34,66 +49,92 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Image
-          source={require('../assets/images/logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <Text style={styles.subtitle}>Client Service</Text>
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header / Logo */}
+          <View style={styles.header}>
+            <Image
+              source={require('../assets/images/logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={styles.subtitle}>Client Service</Text>
+          </View>
 
-      <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email Address"
-          placeholderTextColor="#B0B0B0"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#B0B0B0"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+          {/* Form */}
+          <View style={styles.form}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email Address"
+              placeholderTextColor="#B0B0B0"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              returnKeyType="next"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#B0B0B0"
+              secureTextEntry
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+              value={password}
+              onChangeText={setPassword}
+            />
 
-        <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
-        </TouchableOpacity>
+            <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.buttonText}>Sign In</Text>
+              )}
+            </TouchableOpacity>
 
-        <TouchableOpacity style={styles.linkButton} onPress={() => navigation.navigate('Signup')}>
-          <Text style={styles.linkText}>Don't have an account? <Text style={styles.linkHighlight}>Sign Up</Text></Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+            <TouchableOpacity style={styles.linkButton} onPress={() => navigation.navigate('Signup')}>
+              <Text style={styles.linkText}>
+                Don't have an account? <Text style={styles.linkHighlight}>Sign Up</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#000000',
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 40,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 60,
+    marginBottom: 48,
   },
   logo: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: Math.min(width * 0.45, 180),
+    height: Math.min(width * 0.45, 180),
+    borderRadius: Math.min(width * 0.225, 90),
     overflow: 'hidden',
     marginBottom: 16,
     borderWidth: 2,
@@ -108,7 +149,7 @@ const styles = StyleSheet.create({
   },
   form: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 420,
     alignSelf: 'center',
   },
   input: {
@@ -116,7 +157,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 16,
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#2A2D3A',
@@ -126,7 +167,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
     elevation: 3,
     shadowColor: '#E53935',
     shadowOffset: { width: 0, height: 4 },

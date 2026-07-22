@@ -1,14 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Image,
+  SafeAreaView,
+  StatusBar,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL } from '../config/apiConfig';
 
-const API_URL = Platform.OS === 'web'
-  ? 'http://localhost:5000/api'
-  : 'http://192.168.12.152:5000/api';
+const API_URL = `${BASE_URL}/api`;
 
-export default function OfficeChatScreen({ route }) {
+export default function OfficeChatScreen({ navigation, route }) {
   const { user, token } = route?.params || {};
-  
+
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -16,7 +28,7 @@ export default function OfficeChatScreen({ route }) {
 
   useEffect(() => {
     fetchMessages();
-    const interval = setInterval(fetchMessages, 3000); // Poll every 3 seconds
+    const interval = setInterval(fetchMessages, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -28,9 +40,7 @@ export default function OfficeChatScreen({ route }) {
       }
 
       const response = await fetch(`${API_URL}/office/messages`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
       if (response.ok) {
@@ -93,74 +103,115 @@ export default function OfficeChatScreen({ route }) {
   }
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 90}
-    >
+    <SafeAreaView style={styles.safeArea}>
+      {/* Top Bar */}
       <View style={styles.topBar}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View>
-            <Image 
-              source={require('../assets/images/logo.png')} 
-              style={styles.logo} 
-              resizeMode="contain" 
+          {navigation?.canGoBack() && (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.backBtn}
+            >
+              <Text style={styles.backBtnText}>◀</Text>
+            </TouchableOpacity>
+          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Image
+              source={require('../assets/images/logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
             />
-            <Text style={styles.topBarSub}>Chat Ufficio</Text>
+            <View>
+              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: 'bold' }}>Rossomandi</Text>
+              <Text style={styles.topBarSub}>Chat Ufficio</Text>
+            </View>
           </View>
         </View>
       </View>
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={item => item.id.toString()}
-        renderItem={renderMessage}
-        contentContainerStyle={styles.listContainer}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-      />
-      
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Scrivi un messaggio..."
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
+
+      {/* Keyboard-aware container — pushes input above keyboard */}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        {/* Message List */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={item => item.id.toString()}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.listContainer}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          keyboardShouldPersistTaps="handled"
         />
-        <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-          <Text style={styles.sendButtonText}>Invia</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+
+        {/* Input Bar — stays above keyboard */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Scrivi un messaggio..."
+            placeholderTextColor="#888"
+            value={inputText}
+            onChangeText={setInputText}
+            multiline
+            maxHeight={100}
+            returnKeyType="send"
+            onSubmitEditing={sendMessage}
+            blurOnSubmit={false}
+          />
+          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+            <Text style={styles.sendButtonText}>Invia</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#121212'
+    backgroundColor: '#121212',
+  },
+  keyboardView: {
+    flex: 1,
   },
   topBar: {
-    backgroundColor: '#1E1E1E',
-    paddingTop: Platform.OS === 'ios' ? 45 : 15,
-    paddingBottom: 10,
-    paddingHorizontal: 15,
+    backgroundColor: '#161822',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 10,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#292929',
+    borderBottomColor: '#2A2D3A',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  backBtn: {
+    marginRight: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 8,
+  },
+  backBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   logo: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
+    borderColor: '#E53935',
     overflow: 'hidden',
   },
   topBarSub: {
@@ -174,9 +225,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#121212',
   },
   listContainer: {
     padding: 15,
+    paddingBottom: 8,
   },
   messageBubble: {
     maxWidth: '80%',
@@ -221,9 +274,11 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     padding: 10,
+    paddingHorizontal: 12,
     backgroundColor: '#161822',
     borderTopWidth: 1,
     borderTopColor: '#2A2D3A',
+    alignItems: 'flex-end',
   },
   input: {
     flex: 1,
@@ -232,20 +287,24 @@ const styles = StyleSheet.create({
     borderColor: '#333',
     borderRadius: 20,
     paddingHorizontal: 15,
-    paddingVertical: 10,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
     marginRight: 10,
     fontSize: 15,
     color: '#FFF',
+    minHeight: 44,
   },
   sendButton: {
     backgroundColor: '#E53935',
     borderRadius: 20,
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    alignSelf: 'flex-end',
   },
   sendButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
+    fontSize: 14,
   }
 });

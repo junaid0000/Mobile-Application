@@ -9,6 +9,8 @@ __pycache__/
 
 # Temp files
 backend/temp_sync.accdb
+backend/test_temp.accdb
+*.accdb
 *.laccdb
 
 # Environment (contains passwords)

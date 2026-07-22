@@ -13,12 +13,11 @@ import {
   FlatList,
   Switch,
   Image,
+  TextInput,
+  Alert,
 } from 'react-native';
 import axios from 'axios';
-
-const BASE_URL = Platform.OS === 'web'
-  ? 'http://localhost:5000'
-  : 'http://192.168.12.152:5000';
+import { BASE_URL } from '../config/apiConfig';
 
 // ─── Color Theme (matching app-wide design) ─────────────────────────────────
 const T = {
@@ -259,6 +258,78 @@ export default function AppointmentsScreen({ navigation, route }) {
   const [activeNotification, setActiveNotification] = useState(null);
   const [expandedNotes, setExpandedNotes] = useState({});
 
+  // Settings & Drawer state
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  const [darkMode, setDarkMode] = useState(true);
+  const [notifications, setNotifications] = useState(true);
+  const [language, setLanguage] = useState('IT');
+
+  const t = {
+    settings: language === 'IT' ? 'Impostazioni' : 'Settings',
+    changePassword: language === 'IT' ? 'Modifica Password' : 'Change Password',
+    darkMode: language === 'IT' ? 'Modalità Scura' : 'Dark Mode',
+    pushNotifications: language === 'IT' ? 'Notifiche Push' : 'Push Notifications',
+    langLabel: language === 'IT' ? 'Lingua' : 'Language',
+    langVal: language === 'IT' ? '🇮🇹 Italiano' : '🇬🇧 English',
+    support: language === 'IT' ? 'Guida & Supporto' : 'Help & Support',
+    about: language === 'IT' ? 'Informazioni App' : 'About App',
+    logout: language === 'IT' ? 'Esci dal Account' : 'Log Out',
+    save: language === 'IT' ? 'Salva' : 'Save',
+    cancel: language === 'IT' ? 'Annulla' : 'Cancel',
+    currPass: language === 'IT' ? 'Password attuale' : 'Current password',
+    newPass: language === 'IT' ? 'Nuova password' : 'New password',
+    confPass: language === 'IT' ? 'Conferma nuova password' : 'Confirm new password',
+  };
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Errore', 'Compila tutti i campi');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Errore', 'Le nuove password non coincidono');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await axios.post(
+        `${BASE_URL}/api/auth/change-password`,
+        { oldPassword, newPassword },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      Alert.alert('Successo', 'Password aggiornata con successo!');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordModalVisible(false);
+    } catch (error) {
+      Alert.alert('Errore', error.response?.data?.error || 'Impossibile aggiornare la password');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const showSupportInfo = () => {
+    Alert.alert(
+      t.support,
+      `Rossomandi Automotive Support\n\n✉️ Email: assistenza@rossomandi.it\n📞 Tel: +39 06 1234567\n🕒 Lun - Ven: 09:00 - 18:30`
+    );
+  };
+
+  const showAboutInfo = () => {
+    Alert.alert(
+      t.about,
+      `Rossomandi Automotive App\nVersione: 1.0.4 (Build 2026)\n\nSviluppato per la gestione in tempo reale degli appuntamenti di vendita.`
+    );
+  };
+
   const notifiedApptsRef = useRef(new Set());
 
   const toggleNote = (id) => {
@@ -407,7 +478,16 @@ export default function AppointmentsScreen({ navigation, route }) {
 
   const displayedAppointments = useMemo(() => {
     const yesterday = getYesterdayDate();
-    return appointments.filter(a => a.data_ora && new Date(a.data_ora) >= yesterday);
+    const map = new Map();
+    appointments.forEach(a => {
+      if (a.data_ora && new Date(a.data_ora) >= yesterday) {
+        const key = a.intorno || `${a.cliente}_${a.data_ora}`;
+        if (!map.has(key)) {
+          map.set(key, a);
+        }
+      }
+    });
+    return Array.from(map.values());
   }, [appointments]);
 
   return (
@@ -439,34 +519,30 @@ export default function AppointmentsScreen({ navigation, route }) {
           {navigation?.canGoBack() && (
             <TouchableOpacity
               onPress={() => navigation.goBack()}
-              style={{ marginRight: 15, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 }}
+              style={{ marginRight: 12, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 }}
             >
               <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>◀</Text>
             </TouchableOpacity>
           )}
-          <View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Image
               source={require('../assets/images/logo.png')}
               style={s.logo}
               resizeMode="contain"
             />
-            <Text style={s.topBarSub}>Appuntamenti</Text>
+            <View>
+              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: 'bold' }}>Rossomandi</Text>
+              <Text style={s.topBarSub}>Appuntamenti</Text>
+            </View>
           </View>
         </View>
+
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={s.statsChip}>
             <Text style={s.statsChipText}>
               📅 {displayedAppointments.length}
             </Text>
           </View>
-          {!navigation?.canGoBack() && (
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Login')}
-              style={{ marginLeft: 10, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(229,57,53,0.12)', borderColor: 'rgba(229,57,53,0.3)', borderWidth: 1, borderRadius: 8 }}
-            >
-              <Text style={{ color: '#E53935', fontSize: 12, fontWeight: 'bold' }}>Esci 🚪</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
@@ -474,21 +550,22 @@ export default function AppointmentsScreen({ navigation, route }) {
       <ScrollView
         style={s.scrollArea}
         contentContainerStyle={s.scrollContent}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        persistentScrollbar={true}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={T.yellow}
-            colors={[T.yellow]}
+            tintColor={T.red}
+            colors={[T.red]}
           />
         }
       >
-        {/* Seller Dropdown Filter - Only visible for admin users */}
-        {isAdminUser && (
+        {/* Dropdown Filter for Admins */}
+        {isAdminUser && sellersList.length > 0 && (
           <SellerDropdown
             sellers={sellersList}
-            selected={selectedSeller || '__ALL__'}
+            selected={selectedSeller}
             onSelect={handleSelectSeller}
             userSellerCode={sellerCode}
           />
@@ -555,7 +632,7 @@ export default function AppointmentsScreen({ navigation, route }) {
               {/* Right: Badge Meta */}
               <View style={s.rightBlock}>
                 <View style={s.codeBadgeSmall}>
-                  <Text style={s.codeTextSmall}>#{appt.intorno}</Text>
+                  <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
                 </View>
                 {appt.venditore && (
                   <View style={s.sellerBadgeSmall}>
@@ -563,13 +640,21 @@ export default function AppointmentsScreen({ navigation, route }) {
                   </View>
                 )}
                 {appt.tipo ? (
-                  <View style={s.tipoBadge}>
-                    <Text style={s.tipoText}>{appt.tipo}</Text>
+                  <View style={[
+                    s.tipoBadge,
+                    appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
+                  ]}>
+                    <Text style={[
+                      s.tipoText,
+                      appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
+                    ]}>
+                      {appt.tipo?.toLowerCase().includes('telefon') ? `📞 ${appt.tipo}` : appt.tipo}
+                    </Text>
                   </View>
                 ) : null}
                 {appt.cancellato && (
                   <View style={s.cancelledBadge}>
-                    <Text style={s.cancelledText}>✓ Annullato</Text>
+                    <Text style={s.cancelledText}>✕ Annullato</Text>
                   </View>
                 )}
               </View>
@@ -580,6 +665,180 @@ export default function AppointmentsScreen({ navigation, route }) {
         {/* Bottom Spacer */}
         <View style={{ height: 30 }} />
       </ScrollView>
+
+      {/* ── Left-Side Slide-Out Drawer Modal ──────────────────────────── */}
+      <Modal
+        visible={drawerVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setDrawerVisible(false)}
+      >
+        <View style={s.drawerOverlay}>
+          <View style={[s.leftDrawerContainer, { width: 320 }]}>
+            <View style={s.drawerHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={{ fontSize: 20 }}>⚙️</Text>
+                <Text style={s.drawerTitle}>{t.settings}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setDrawerVisible(false)} style={s.closeBtn}>
+                <Text style={s.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={s.drawerScroll} showsVerticalScrollIndicator={true}>
+              {/* User Profile Card */}
+              <View style={s.profileCard}>
+                <View style={s.profileAvatar}>
+                  <Text style={{ fontSize: 24 }}>👤</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.profileName}>{user?.name || 'Venditore'}</Text>
+                  <Text style={s.profileEmail}>{user?.email || ''}</Text>
+                  <View style={s.roleTagBadge}>
+                    <Text style={s.roleTagBadgeText}>#{user?.venditore_code || sellerCode || user?.role?.toUpperCase() || 'SELLER'}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={s.drawerList}>
+                <TouchableOpacity
+                  style={s.drawerItem}
+                  onPress={() => {
+                    setDrawerVisible(false);
+                    setPasswordModalVisible(true);
+                  }}
+                >
+                  <Text style={s.drawerIcon}>🔒</Text>
+                  <Text style={s.drawerText}>{t.changePassword}</Text>
+                  <Text style={s.drawerArrow}>➔</Text>
+                </TouchableOpacity>
+
+                <View style={s.drawerItem}>
+                  <Text style={s.drawerIcon}>🌙</Text>
+                  <Text style={s.drawerText}>{t.darkMode}</Text>
+                  <Switch
+                    value={darkMode}
+                    onValueChange={setDarkMode}
+                    trackColor={{ false: '#333', true: '#FF5500' }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+
+                <View style={s.drawerItem}>
+                  <Text style={s.drawerIcon}>🔔</Text>
+                  <Text style={s.drawerText}>{t.pushNotifications}</Text>
+                  <Switch
+                    value={notifications}
+                    onValueChange={setNotifications}
+                    trackColor={{ false: '#333', true: '#FF5500' }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={s.drawerItem}
+                  onPress={() => setLanguage(l => l === 'IT' ? 'EN' : 'IT')}
+                >
+                  <Text style={s.drawerIcon}>🌐</Text>
+                  <Text style={s.drawerText}>{t.langLabel}</Text>
+                  <Text style={s.langValue}>{t.langVal}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.drawerItem} onPress={showSupportInfo}>
+                  <Text style={s.drawerIcon}>❓</Text>
+                  <Text style={s.drawerText}>{t.support}</Text>
+                  <Text style={s.drawerArrow}>➔</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.drawerItem} onPress={showAboutInfo}>
+                  <Text style={s.drawerIcon}>ℹ️</Text>
+                  <Text style={s.drawerText}>{t.about}</Text>
+                  <Text style={s.drawerArrow}>➔</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.drawerItem, { borderBottomWidth: 0, marginTop: 12 }]}
+                  onPress={() => {
+                    setDrawerVisible(false);
+                    navigation.navigate('Login');
+                  }}
+                >
+                  <Text style={s.drawerIcon}>🚪</Text>
+                  <Text style={[s.drawerText, { color: '#E53935', fontWeight: 'bold' }]}>
+                    {t.logout}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            onPress={() => setDrawerVisible(false)}
+          />
+        </View>
+      </Modal>
+
+      {/* ── Change Password Dialog Box ────────────────────────────────── */}
+      <Modal
+        visible={passwordModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setPasswordModalVisible(false)}
+      >
+        <View style={s.dialogOverlay}>
+          <View style={[s.dialogBox, { width: '90%', maxWidth: 400 }]}>
+            <Text style={s.dialogTitle}>🔒 {t.changePassword}</Text>
+
+            <TextInput
+              style={s.dialogInput}
+              placeholder={t.currPass}
+              placeholderTextColor="#888"
+              secureTextEntry
+              value={oldPassword}
+              onChangeText={setOldPassword}
+            />
+            <TextInput
+              style={s.dialogInput}
+              placeholder={t.newPass}
+              placeholderTextColor="#888"
+              secureTextEntry
+              value={newPassword}
+              onChangeText={setNewPassword}
+            />
+            <TextInput
+              style={s.dialogInput}
+              placeholder={t.confPass}
+              placeholderTextColor="#888"
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
+
+            <View style={s.dialogBtnRow}>
+              <TouchableOpacity
+                style={s.dialogCancelBtn}
+                onPress={() => setPasswordModalVisible(false)}
+              >
+                <Text style={s.dialogCancelText}>{t.cancel}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.dialogSubmitBtn}
+                onPress={handleChangePassword}
+                disabled={changingPassword}
+              >
+                {changingPassword ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={s.dialogSubmitText}>{t.save}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -591,25 +850,27 @@ const s = StyleSheet.create({
     backgroundColor: T.bg,
   },
   topBar: {
-    backgroundColor: T.surface,
+    backgroundColor: '#161822',
     paddingTop: Platform.OS === 'ios' ? 55 : 25,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: T.border,
+    borderBottomColor: '#2A2D3A',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   logo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1.5,
+    borderColor: '#E53935',
     overflow: 'hidden',
   },
   topBarSub: {
@@ -813,15 +1074,15 @@ const s = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   cancelledBadge: {
-    backgroundColor: 'rgba(16,185,129,0.12)',
-    borderColor: 'rgba(16,185,129,0.3)',
+    backgroundColor: 'rgba(200,62,77,0.15)',
+    borderColor: 'rgba(200,62,77,0.4)',
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 3,
   },
   cancelledText: {
-    color: T.green,
+    color: '#C83E4D',
     fontSize: 10,
     fontWeight: '700',
   },
@@ -832,13 +1093,20 @@ const s = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 3,
-    maxWidth: 80,
+    maxWidth: 100,
+  },
+  tipoBadgeGreen: {
+    backgroundColor: 'rgba(46,213,115,0.12)',
+    borderColor: 'rgba(46,213,115,0.35)',
   },
   tipoText: {
     color: '#818cf8',
     fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  tipoTextGreen: {
+    color: '#2ED573',
   },
   notificationBanner: {
     position: 'absolute',
@@ -889,6 +1157,166 @@ const s = StyleSheet.create({
   notificationCloseText: {
     color: '#94A3B8',
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  drawerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    flexDirection: 'row',
+  },
+  leftDrawerContainer: {
+    backgroundColor: '#161822',
+    height: '100%',
+    paddingTop: Platform.OS === 'ios' ? 55 : 30,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2D3A',
+  },
+  drawerTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  closeBtn: {
+    padding: 6,
+  },
+  closeBtnText: {
+    color: '#888',
+    fontSize: 20,
+  },
+  drawerScroll: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    padding: 14,
+    marginVertical: 16,
+    borderWidth: 1,
+    borderColor: '#2A2D3A',
+  },
+  profileAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2A2D3A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileName: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  profileEmail: {
+    color: '#888',
+    fontSize: 12,
+  },
+  roleTagBadge: {
+    backgroundColor: 'rgba(255,85,0,0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  roleTagBadgeText: {
+    color: '#FF5500',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  drawerList: {
+    gap: 6,
+  },
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  drawerIcon: {
+    fontSize: 18,
+    marginRight: 12,
+  },
+  drawerText: {
+    color: '#DDD',
+    fontSize: 15,
+    flex: 1,
+  },
+  drawerArrow: {
+    color: '#666',
+    fontSize: 14,
+  },
+  langValue: {
+    color: '#FF5500',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  dialogOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dialogBox: {
+    backgroundColor: '#1A1C28',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#2A2D3A',
+  },
+  dialogTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  dialogInput: {
+    backgroundColor: '#11131C',
+    borderRadius: 10,
+    padding: 14,
+    color: '#FFF',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2A2D3A',
+    fontSize: 14,
+  },
+  dialogBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 16,
+  },
+  dialogCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#2A2D3A',
+  },
+  dialogCancelText: {
+    color: '#AAA',
+    fontWeight: '600',
+  },
+  dialogSubmitBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#FF5500',
+  },
+  dialogSubmitText: {
+    color: '#FFF',
     fontWeight: 'bold',
   },
 });

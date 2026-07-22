@@ -64,7 +64,7 @@ export default function MainTabNavigator({ route }) {
 
   return (
     <Tab.Navigator
-      initialRouteName={isSeller ? "Appointments" : "Clients"}
+      initialRouteName="Appointments"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -79,66 +79,34 @@ export default function MainTabNavigator({ route }) {
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.15,
           shadowRadius: 12,
-          // Show bottom tab bar for all roles
           display: 'flex',
         },
         tabBarShowLabel: false,
       }}
     >
-      {/* ── TAB 1: Garage / HomeScreen (Only for Clients) ─────────────────────────── */}
-      {isClient && (
-        <Tab.Screen
-          name="Clients"
-          component={HomeScreen}
-          initialParams={{ user, token }}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon emoji="🚘" label="Garage" focused={focused} />
-            ),
-          }}
-        />
-      )}
+      {/* ── TAB 1: Appointments (Sellers and Admins) ─────────── */}
+      <Tab.Screen
+        name="Appointments"
+        component={AppointmentsScreen}
+        initialParams={{ user, token }}
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="📅" label="Appointments" focused={focused} />
+          ),
+        }}
+      />
 
-      {/* ── TAB 2: Inventory (Only for Clients) ────────────────────────────────────── */}
-      {isClient && (
-        <Tab.Screen
-          name="Inventory"
-          component={InventoryScreen}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon emoji="🚗" label="Inventory" focused={focused} />
-            ),
-          }}
-        />
-      )}
-
-      {/* ── TAB 3: Appointments (Sellers and Admins) ─────────── */}
-      {(isSeller || userRole === 'admin') && (
-        <Tab.Screen
-          name="Appointments"
-          component={AppointmentsScreen}
-          initialParams={{ user, token }}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon emoji="📅" label="Appointments" focused={focused} />
-            ),
-          }}
-        />
-      )}
-
-      {/* ── TAB 4: Office Chat (Sellers and Admins) ─────────── */}
-      {(isSeller || userRole === 'admin') && (
-        <Tab.Screen
-          name="OfficeChat"
-          component={OfficeChatScreen}
-          initialParams={{ user, token }}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon emoji="💬" label="Chat" focused={focused} />
-            ),
-          }}
-        />
-      )}
+      {/* ── TAB 2: Office Chat (Sellers and Admins) ─────────── */}
+      <Tab.Screen
+        name="OfficeChat"
+        component={OfficeChatScreen}
+        initialParams={{ user, token }}
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="💬" label="Chat" focused={focused} />
+          ),
+        }}
+      />
     </Tab.Navigator>
   );
 }

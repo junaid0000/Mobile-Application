@@ -16,10 +16,7 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import * as WebBrowser from 'expo-web-browser';
-
-const BASE_URL = Platform.OS === 'web'
-  ? 'http://localhost:5000'
-  : 'http://192.168.12.152:5000';
+import { BASE_URL } from '../config/apiConfig';
 
 // ─── Color Theme ─────────────────────────────────────────────────────────────
 const T = {
