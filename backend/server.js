@@ -162,6 +162,32 @@ const initDb = async () => {
       console.log('Seeded Admin account (admin@rossomandi.com / admin123)');
     }
 
+    // Seed seller account
+    const sellerEmail = 'venditore1@rossomandi.com';
+    const sellerExists = await db.query('SELECT * FROM users WHERE email = $1', [sellerEmail]);
+    if (sellerExists.rows.length === 0) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash('seller123', salt);
+      await db.query(
+        "INSERT INTO users (name, email, password, role, venditore_code) VALUES ($1, $2, $3, $4, $5)",
+        ['Venditore Uno', sellerEmail, hashedPassword, 'seller', 'V001']
+      );
+      console.log('Seeded Seller account (venditore1@rossomandi.com / seller123)');
+    }
+
+    // Seed client account
+    const clientEmail = 'cliente1@rossomandi.com';
+    const clientExists = await db.query('SELECT * FROM users WHERE email = $1', [clientEmail]);
+    if (clientExists.rows.length === 0) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash('client123', salt);
+      await db.query(
+        "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4)",
+        ['Cliente Uno', clientEmail, hashedPassword, 'client']
+      );
+      console.log('Seeded Client account (cliente1@rossomandi.com / client123)');
+    }
+
     // Promote all Junaid and official admin accounts to admin role
     await db.query(`
       UPDATE users 
