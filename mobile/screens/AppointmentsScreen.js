@@ -1,0 +1,1444 @@
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  Platform,
+  RefreshControl,
+  Modal,
+  Animated,
+  FlatList,
+  Switch,
+  Image,
+  TextInput,
+  Alert,
+} from 'react-native';
+import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { BASE_URL } from '../config/apiConfig';
+
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+} catch (e) {
+  console.log('Expo Go notification handler initialization skipped:', e);
+}
+
+// ─── Color Theme (matching app-wide design) ─────────────────────────────────
+const T = {
+  bg: '#000000',
+  surface: '#161822',
+  surfaceAlt: '#222533',
+  red: '#E53935',
+  yellow: '#FFC107',
+  redLight: 'rgba(229,57,53,0.12)',
+  redBorder: 'rgba(229,57,53,0.3)',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#A0AEC0',
+  textMuted: '#718096',
+  border: '#2A2D3A',
+  green: '#10B981',
+  greenLight: 'rgba(16,185,129,0.12)',
+  amber: '#FFC107',
+  amberLight: 'rgba(255,193,7,0.08)',
+};
+
+// ─── Dropdown Picker Component ──────────────────────────────────────────────
+function SellerDropdown({ sellers, selected, onSelect, userSellerCode }) {
+  const [open, setOpen] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (open) {
+      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    } else {
+      fadeAnim.setValue(0);
+    }
+  }, [open]);
+
+  const displayLabel = selected === '__ALL__'
+    ? '🔍 Tutti i Venditori'
+    : `👤 ${selected}`;
+
+  return (
+    <View style={dropStyles.wrapper}>
+      <TouchableOpacity
+        style={dropStyles.trigger}
+        onPress={() => setOpen(true)}
+        activeOpacity={0.7}
+      >
+        <Text style={dropStyles.triggerText}>{displayLabel}</Text>
+        <Text style={dropStyles.arrow}>▼</Text>
+      </TouchableOpacity>
+
+      <Modal
+        transparent
+        visible={open}
+        animationType="none"
+        onRequestClose={() => setOpen(false)}
+      >
+        <TouchableOpacity
+          style={dropStyles.backdrop}
+          activeOpacity={1}
+          onPress={() => setOpen(false)}
+        >
+          <Animated.View style={[dropStyles.menu, { opacity: fadeAnim }]}>
+            <Text style={dropStyles.menuTitle}>Seleziona Venditore</Text>
+
+            {/* All option */}
+            <TouchableOpacity
+              style={[
+                dropStyles.menuItem,
+                selected === '__ALL__' && dropStyles.menuItemActive,
+              ]}
+              onPress={() => { onSelect('__ALL__'); setOpen(false); }}
+            >
+              <Text style={dropStyles.menuItemIcon}>🔍</Text>
+              <Text style={[
+                dropStyles.menuItemText,
+                selected === '__ALL__' && dropStyles.menuItemTextActive,
+              ]}>
+                Tutti i Venditori
+              </Text>
+              {selected === '__ALL__' && <Text style={dropStyles.checkmark}>✓</Text>}
+            </TouchableOpacity>
+
+            <View style={dropStyles.divider} />
+
+            {/* Seller options */}
+            <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+              {sellers.map((code) => {
+                const isActive = selected === code;
+                const isSelf = code === userSellerCode;
+                return (
+                  <TouchableOpacity
+                    key={code}
+                    style={[dropStyles.menuItem, isActive && dropStyles.menuItemActive]}
+                    onPress={() => { onSelect(code); setOpen(false); }}
+                  >
+                    <Text style={dropStyles.menuItemIcon}>
+                      {isSelf ? '⭐' : '👤'}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[
+                        dropStyles.menuItemText,
+                        isActive && dropStyles.menuItemTextActive,
+                      ]}>
+                        {code}
+                      </Text>
+                      {isSelf && (
+                        <Text style={dropStyles.selfLabel}>Il tuo codice</Text>
+                      )}
+                    </View>
+                    {isActive && <Text style={dropStyles.checkmark}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
+const dropStyles = StyleSheet.create({
+  wrapper: { marginBottom: 16 },
+  trigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  triggerText: {
+    color: T.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  arrow: {
+    color: T.yellow,
+    fontSize: 12,
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+  },
+  menu: {
+    backgroundColor: T.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: T.border,
+    width: '100%',
+    maxWidth: 400,
+    padding: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  menuTitle: {
+    color: T.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderRadius: 12,
+    gap: 12,
+  },
+  menuItemActive: {
+    backgroundColor: 'rgba(255,193,7,0.08)',
+  },
+  menuItemIcon: {
+    fontSize: 18,
+  },
+  menuItemText: {
+    color: T.textPrimary,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  menuItemTextActive: {
+    color: T.yellow,
+    fontWeight: '700',
+  },
+  selfLabel: {
+    color: T.textMuted,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  checkmark: {
+    color: T.yellow,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: T.border,
+    marginHorizontal: 14,
+    marginVertical: 4,
+  },
+});
+
+// ─── Main Appointments Screen ───────────────────────────────────────────────
+export default function AppointmentsScreen({ navigation, route }) {
+  const { user, token } = route?.params || {};
+  const userRole = user?.role || 'client';
+
+  // Guard safeguard to check if the user is an admin by role, name, or email
+  const nameLower = user?.name ? user.name.toLowerCase() : '';
+  const emailLower = user?.email ? user.email.toLowerCase() : '';
+  const isAdminUser = userRole === 'admin' ||
+    nameLower.includes('lorenzo') ||
+    nameLower.includes('junaid') ||
+    nameLower.includes('francesco') ||
+    nameLower.includes('valentina') ||
+    emailLower.includes('lorenzo') ||
+    emailLower.includes('junaid') ||
+    emailLower.includes('francesco') ||
+    emailLower.includes('valentina');
+
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sellerCode, setSellerCode] = useState(null); // user's own code
+  const [sellersList, setSellersList] = useState([]);
+  const [selectedSeller, setSelectedSeller] = useState('__ALL__'); // default depends on role
+  const [activeNotification, setActiveNotification] = useState(null);
+  const [expandedNotes, setExpandedNotes] = useState({});
+
+  // Settings & Drawer state
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  // Avatar state
+  const [avatarUri, setAvatarUri] = useState(null);
+
+  // Settings toggles
+  const [darkMode, setDarkMode] = useState(true);
+  const [notifications, setNotifications] = useState(true);
+  const [language, setLanguage] = useState('IT');
+
+  useEffect(() => {
+    AsyncStorage.getItem('@app_dark_mode').then(val => {
+      if (val !== null) setDarkMode(JSON.parse(val));
+    });
+    if (user?.id) {
+      AsyncStorage.getItem(`@user_avatar_${user.id}`).then(uri => {
+        if (uri) setAvatarUri(uri);
+      });
+    }
+  }, [user?.id]);
+
+  const handleToggleDarkMode = async (val) => {
+    setDarkMode(val);
+    await AsyncStorage.setItem('@app_dark_mode', JSON.stringify(val));
+  };
+
+  const pickProfilePicture = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permesso Negato', 'Abilita l\'accesso alla galleria per scegliere una foto profilo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets && result.assets[0].uri) {
+        const uri = result.assets[0].uri;
+        setAvatarUri(uri);
+        if (user?.id) {
+          await AsyncStorage.setItem(`@user_avatar_${user.id}`, uri);
+        }
+      }
+    } catch (err) {
+      console.error('Error picking avatar image:', err);
+    }
+  };
+
+  const t = {
+    settings: language === 'IT' ? 'Impostazioni' : 'Settings',
+    changePassword: language === 'IT' ? 'Modifica Password' : 'Change Password',
+    darkMode: language === 'IT' ? 'Modalità Scura' : 'Dark Mode',
+    pushNotifications: language === 'IT' ? 'Notifiche Push' : 'Push Notifications',
+    langLabel: language === 'IT' ? 'Lingua' : 'Language',
+    langVal: language === 'IT' ? '🇮🇹 Italiano' : '🇬🇧 English',
+    support: language === 'IT' ? 'Guida & Supporto' : 'Help & Support',
+    about: language === 'IT' ? 'Informazioni App' : 'About App',
+    logout: language === 'IT' ? 'Esci dal Account' : 'Log Out',
+    save: language === 'IT' ? 'Salva' : 'Save',
+    cancel: language === 'IT' ? 'Annulla' : 'Cancel',
+    currPass: language === 'IT' ? 'Password attuale' : 'Current password',
+    newPass: language === 'IT' ? 'Nuova password' : 'New password',
+    confPass: language === 'IT' ? 'Conferma nuova password' : 'Confirm new password',
+  };
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Errore', 'Compila tutti i campi');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Errore', 'Le nuove password non coincidono');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await axios.post(
+        `${BASE_URL}/api/auth/change-password`,
+        { oldPassword, newPassword },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      Alert.alert('Successo', 'Password aggiornata con successo!');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordModalVisible(false);
+    } catch (error) {
+      Alert.alert('Errore', error.response?.data?.error || 'Impossibile aggiornare la password');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const showSupportInfo = () => {
+    Alert.alert(
+      t.support,
+      `Rossomandi Automotive Support\n\n✉️ Email: junaidmunir.janjua@rossomandi.com\n📞 Tel: +39-3481714322\n🕒 Lun - Ven: 09:00 - 18:00`
+    );
+  };
+
+  const showAboutInfo = () => {
+    Alert.alert(
+      t.about,
+      `Rossomandi Client Service & Sales System\nVersione: 1.0.4 (Build 2026)\n\nApplicazione ufficiale Rossomandi Automotive per la gestione in tempo reale degli appuntamenti di vendita, sync con il database aziendale, chat d'ufficio e notifiche per lo staff.`
+    );
+  };
+
+  const notified15mRef = useRef(new Set());
+  const notified5mRef = useRef(new Set());
+
+  const triggerRingNotification = async (title, body) => {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.MAX,
+        },
+        trigger: null,
+      });
+    } catch (e) {
+      console.log('Notification trigger note:', e.message);
+    }
+  };
+
+  const toggleNote = (id) => {
+    setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Check for upcoming appointments (15 min alert and 5 min alert) with ring sound
+  const checkUpcomingNotifications = useCallback((list) => {
+    if (!list || list.length === 0 || !notifications) return;
+    const now = new Date();
+    list.forEach(appt => {
+      if (!appt.data_ora || appt.cancellato) return;
+
+      const apptTime = new Date(appt.data_ora);
+      const diffMs = apptTime.getTime() - now.getTime();
+      const diffMinutes = Math.round(diffMs / (1000 * 60));
+
+      const apptId15 = `${appt.intorno}_15m`;
+      const apptId5 = `${appt.intorno}_5m`;
+
+      // 1st Alert: 13 to 17 minutes before appointment (15-min warning)
+      if (diffMinutes >= 13 && diffMinutes <= 17 && !notified15mRef.current.has(apptId15)) {
+        notified15mRef.current.add(apptId15);
+
+        const title = `⏰ Appuntamento tra 15 minuti!`;
+        const body = `Hai un appuntamento con ${appt.cliente || 'Cliente'} alle ${formatTime(appt.data_ora)} (${appt.luogo || 'Sede'}).`;
+
+        triggerRingNotification(title, body);
+
+        setActiveNotification({
+          id: appt.intorno,
+          title: '⏰ Preavviso 15 Minuti',
+          client: appt.cliente || 'Cliente',
+          time: formatTime(appt.data_ora),
+          seller: appt.venditore || 'Venditore'
+        });
+
+        setTimeout(() => setActiveNotification(null), 12000);
+      }
+
+      // 2nd Alert: 3 to 6 minutes before appointment (5-min final warning)
+      if (diffMinutes >= 3 && diffMinutes <= 6 && !notified5mRef.current.has(apptId5)) {
+        notified5mRef.current.add(apptId5);
+
+        const title = `🚨 Promemoria Finale (5 min)!`;
+        const body = `L'appuntamento con ${appt.cliente || 'Cliente'} inizia tra 5 minuti!`;
+
+        triggerRingNotification(title, body);
+
+        setActiveNotification({
+          id: appt.intorno,
+          title: '🚨 Promemoria 5 Minuti',
+          client: appt.cliente || 'Cliente',
+          time: formatTime(appt.data_ora),
+          seller: appt.venditore || 'Venditore'
+        });
+
+        setTimeout(() => setActiveNotification(null), 12000);
+      }
+    });
+  }, [notifications]);
+
+  // Fetch sellers list for the dropdown
+  const fetchSellersList = useCallback(async () => {
+    try {
+      const res = await axios.get(`${BASE_URL}/api/seller/sellers-list`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSellersList(res.data.sellers || []);
+    } catch (err) {
+      console.error('Error fetching sellers list:', err);
+    }
+  }, [token]);
+
+  // Fetch appointments (optionally filtered by seller)
+  const fetchAppointments = useCallback(async (filter) => {
+    try {
+      let url = `${BASE_URL}/api/seller/appointments`;
+      if (filter && filter !== '__ALL__') {
+        url += `?venditore=${encodeURIComponent(filter)}`;
+      }
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const list = res.data.appointments || [];
+      setAppointments(list);
+      checkUpcomingNotifications(list);
+
+      if (!sellerCode && res.data.seller_code) {
+        setSellerCode(res.data.seller_code);
+      }
+    } catch (err) {
+      console.error('Error fetching appointments:', err);
+      setAppointments([]);
+    }
+  }, [token, sellerCode, checkUpcomingNotifications]);
+
+  // Periodic interval to check upcoming appointments every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkUpcomingNotifications(appointments);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [appointments, checkUpcomingNotifications]);
+
+  // Initial load
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      if (isAdminUser) {
+        await fetchSellersList();
+        setSelectedSeller('__ALL__');
+        await fetchAppointments('__ALL__');
+      } else {
+        // Seller: fetch default (server filters by their own code)
+        await fetchAppointments(null);
+        setSelectedSeller(null); // will be set once we get seller_code back
+      }
+      setLoading(false);
+    };
+    init();
+  }, []);
+
+  // When sellerCode is set from the first fetch, update selectedSeller for sellers
+  useEffect(() => {
+    if (sellerCode && userRole !== 'admin' && selectedSeller === null) {
+      setSelectedSeller(sellerCode);
+    }
+  }, [sellerCode]);
+
+  // When dropdown selection changes, re-fetch
+  const handleSelectSeller = async (code) => {
+    setSelectedSeller(code);
+    setLoading(true);
+    await fetchAppointments(code);
+    setLoading(false);
+  };
+
+  // Pull-to-refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchSellersList();
+    await fetchAppointments(selectedSeller);
+    setRefreshing(false);
+  };
+
+  const getDateString = (dateStr) => {
+    if (!dateStr) return 'SENZA';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
+  };
+
+  const getYearString = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.getFullYear().toString();
+  };
+
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Get yesterday's date at midnight for comparison
+  const getYesterdayDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const displayedAppointments = useMemo(() => {
+    const yesterday = getYesterdayDate();
+    const map = new Map();
+    appointments.forEach(a => {
+      if (a.data_ora && new Date(a.data_ora) >= yesterday) {
+        const key = a.intorno || `${a.cliente}_${a.data_ora}`;
+        if (!map.has(key)) {
+          map.set(key, a);
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [appointments]);
+
+  return (
+    <View style={s.container}>
+      {/* Sliding In-App Upcoming Alert Banner */}
+      {activeNotification && (
+        <View style={s.notificationBanner}>
+          <View style={s.notificationContent}>
+            <Text style={s.notificationIcon}>🔔</Text>
+            <View style={s.notificationTextWrapper}>
+              <Text style={s.notificationTitle}>Preavviso Appuntamento (30 min)</Text>
+              <Text style={s.notificationDesc}>
+                {activeNotification.seller}, hai un appuntamento alle {activeNotification.time} con {activeNotification.client}.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={s.notificationCloseBtn}
+              onPress={() => setActiveNotification(null)}
+            >
+              <Text style={s.notificationCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ── Top Nav Bar ─────────────────────────────────────────── */}
+      <View style={s.topBar}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {navigation?.canGoBack() && (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={{ marginRight: 12, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 }}
+            >
+              <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>◀</Text>
+            </TouchableOpacity>
+          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Image
+              source={require('../assets/images/logo.png')}
+              style={s.logo}
+              resizeMode="contain"
+            />
+            <View>
+              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: 'bold' }}>Rossomandi</Text>
+              <Text style={s.topBarSub}>Appuntamenti</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={s.statsChip}>
+            <Text style={s.statsChipText}>
+              📅 {displayedAppointments.length}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Main Content ────────────────────────────────────────── */}
+      <ScrollView
+        style={s.scrollArea}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={true}
+        persistentScrollbar={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={T.red}
+            colors={[T.red]}
+          />
+        }
+      >
+        {/* Dropdown Filter for Admins */}
+        {isAdminUser && sellersList.length > 0 && (
+          <SellerDropdown
+            sellers={sellersList}
+            selected={selectedSeller}
+            onSelect={handleSelectSeller}
+            userSellerCode={sellerCode}
+          />
+        )}
+
+        {loading ? (
+          <View style={s.loadingBox}>
+            <ActivityIndicator color={T.red} size="large" />
+            <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
+          </View>
+        ) : displayedAppointments.length === 0 ? (
+          /* Empty State */
+          <View style={s.emptyState}>
+            <View style={s.emptyIconCircle}>
+              <Text style={s.emptyIcon}>📅</Text>
+            </View>
+            <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
+            <Text style={s.emptySubtitle}>
+              Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
+            </Text>
+          </View>
+        ) : (
+          /* Line by Line Appointment list */
+          displayedAppointments.map((appt, idx) => (
+            <View
+              key={`${appt.intorno}-${idx}`}
+              style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
+            >
+              {/* Left: Date & Year Block */}
+              <View style={s.dateBlock}>
+                <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
+                <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
+              </View>
+
+              {/* Middle: Details Row */}
+              <View style={s.mainBlock}>
+                <View style={s.timeRow}>
+                  <Text style={s.timeText}>
+                    🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
+                  </Text>
+                </View>
+                <Text
+                  style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
+                  numberOfLines={1}
+                >
+                  {appt.cliente || 'Cliente Sconosciuto'}
+                </Text>
+                <Text style={s.placeText} numberOfLines={1}>
+                  📍 {appt.luogo || 'Sede non specificata'}
+                </Text>
+                {appt.note ? (
+                  expandedNotes[appt.intorno] ? (
+                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+                      <Text style={s.noteText}>📝 {appt.note}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+                      <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
+                    </TouchableOpacity>
+                  )
+                ) : null}
+              </View>
+
+              {/* Right: Badge Meta */}
+              <View style={s.rightBlock}>
+                <View style={s.codeBadgeSmall}>
+                  <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
+                </View>
+                {appt.venditore && (
+                  <View style={s.sellerBadgeSmall}>
+                    <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
+                  </View>
+                )}
+                {appt.tipo ? (
+                  <View style={[
+                    s.tipoBadge,
+                    appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
+                  ]}>
+                    <Text style={[
+                      s.tipoText,
+                      appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
+                    ]}>
+                      {appt.tipo?.toLowerCase().includes('telefon') ? `☎️ ${appt.tipo}` : appt.tipo}
+                    </Text>
+                  </View>
+                ) : null}
+                {appt.cancellato && (
+                  <View style={s.cancelledBadge}>
+                    <Text style={s.cancelledText}>✕ Annullato</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          ))
+        )}
+
+        {/* Bottom Spacer */}
+        <View style={{ height: 30 }} />
+      </ScrollView>
+
+      {/* ── Left-Side Slide-Out Drawer Modal ──────────────────────────── */}
+      <Modal
+        visible={drawerVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setDrawerVisible(false)}
+      >
+        <View style={s.drawerOverlay}>
+          <View style={[s.leftDrawerContainer, { width: 320 }]}>
+            <View style={s.drawerHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={{ fontSize: 20 }}>⚙️</Text>
+                <Text style={s.drawerTitle}>{t.settings}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setDrawerVisible(false)} style={s.closeBtn}>
+                <Text style={s.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={s.drawerScroll} showsVerticalScrollIndicator={true}>
+              {/* User Profile Card */}
+              <View style={s.profileCard}>
+                <TouchableOpacity style={s.profileAvatar} onPress={pickProfilePicture} activeOpacity={0.8}>
+                  {avatarUri ? (
+                    <Image source={{ uri: avatarUri }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                  ) : (
+                    <Text style={{ fontSize: 24 }}>👤</Text>
+                  )}
+                  <View style={{
+                    position: 'absolute',
+                    bottom: -2,
+                    right: -2,
+                    backgroundColor: '#FF5500',
+                    borderRadius: 9,
+                    width: 18,
+                    height: 18,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: '#FFF',
+                  }}>
+                    <Text style={{ fontSize: 10 }}>📷</Text>
+                  </View>
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.profileName}>{user?.name || 'Venditore'}</Text>
+                  <Text style={s.profileEmail}>{user?.email || ''}</Text>
+                  <View style={s.roleTagBadge}>
+                    <Text style={s.roleTagBadgeText}>#{user?.venditore_code || sellerCode || user?.role?.toUpperCase() || 'SELLER'}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={s.drawerList}>
+                <TouchableOpacity
+                  style={s.drawerItem}
+                  onPress={() => {
+                    setDrawerVisible(false);
+                    setPasswordModalVisible(true);
+                  }}
+                >
+                  <Text style={s.drawerIcon}>🔒</Text>
+                  <Text style={s.drawerText}>{t.changePassword}</Text>
+                  <Text style={s.drawerArrow}>➔</Text>
+                </TouchableOpacity>
+
+                <View style={s.drawerItem}>
+                  <Text style={s.drawerIcon}>🌙</Text>
+                  <Text style={s.drawerText}>{t.darkMode}</Text>
+                  <Switch
+                    value={darkMode}
+                    onValueChange={handleToggleDarkMode}
+                    trackColor={{ false: '#333', true: '#FF5500' }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+
+                <View style={s.drawerItem}>
+                  <Text style={s.drawerIcon}>🔔</Text>
+                  <Text style={s.drawerText}>{t.pushNotifications}</Text>
+                  <Switch
+                    value={notifications}
+                    onValueChange={setNotifications}
+                    trackColor={{ false: '#333', true: '#FF5500' }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={s.drawerItem}
+                  onPress={() => setLanguage(l => l === 'IT' ? 'EN' : 'IT')}
+                >
+                  <Text style={s.drawerIcon}>🌐</Text>
+                  <Text style={s.drawerText}>{t.langLabel}</Text>
+                  <Text style={s.langValue}>{t.langVal}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.drawerItem} onPress={showSupportInfo}>
+                  <Text style={s.drawerIcon}>❓</Text>
+                  <Text style={s.drawerText}>{t.support}</Text>
+                  <Text style={s.drawerArrow}>➔</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.drawerItem} onPress={showAboutInfo}>
+                  <Text style={s.drawerIcon}>ℹ️</Text>
+                  <Text style={s.drawerText}>{t.about}</Text>
+                  <Text style={s.drawerArrow}>➔</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.drawerItem, { borderBottomWidth: 0, marginTop: 12 }]}
+                  onPress={() => {
+                    setDrawerVisible(false);
+                    navigation.navigate('Login');
+                  }}
+                >
+                  <Text style={s.drawerIcon}>🚪</Text>
+                  <Text style={[s.drawerText, { color: '#E53935', fontWeight: 'bold' }]}>
+                    {t.logout}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            onPress={() => setDrawerVisible(false)}
+          />
+        </View>
+      </Modal>
+
+      {/* ── Change Password Dialog Box ────────────────────────────────── */}
+      <Modal
+        visible={passwordModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setPasswordModalVisible(false)}
+      >
+        <View style={s.dialogOverlay}>
+          <View style={[s.dialogBox, { width: '90%', maxWidth: 400 }]}>
+            <Text style={s.dialogTitle}>🔒 {t.changePassword}</Text>
+
+            <TextInput
+              style={s.dialogInput}
+              placeholder={t.currPass}
+              placeholderTextColor="#888"
+              secureTextEntry
+              value={oldPassword}
+              onChangeText={setOldPassword}
+            />
+            <TextInput
+              style={s.dialogInput}
+              placeholder={t.newPass}
+              placeholderTextColor="#888"
+              secureTextEntry
+              value={newPassword}
+              onChangeText={setNewPassword}
+            />
+            <TextInput
+              style={s.dialogInput}
+              placeholder={t.confPass}
+              placeholderTextColor="#888"
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
+
+            <View style={s.dialogBtnRow}>
+              <TouchableOpacity
+                style={s.dialogCancelBtn}
+                onPress={() => setPasswordModalVisible(false)}
+              >
+                <Text style={s.dialogCancelText}>{t.cancel}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.dialogSubmitBtn}
+                onPress={handleChangePassword}
+                disabled={changingPassword}
+              >
+                {changingPassword ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={s.dialogSubmitText}>{t.save}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+// ─── Styles ─────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: T.bg,
+  },
+  topBar: {
+    backgroundColor: '#161822',
+    paddingTop: Platform.OS === 'ios' ? 55 : 25,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2D3A',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  logo: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1.5,
+    borderColor: '#E53935',
+    overflow: 'hidden',
+  },
+  topBarSub: {
+    color: T.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  statsChip: {
+    backgroundColor: T.amberLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255,193,7,0.2)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  statsChipText: {
+    color: T.yellow,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+
+  // Loading
+  loadingBox: {
+    alignItems: 'center',
+    paddingTop: 80,
+  },
+  loadingText: {
+    color: T.textSecondary,
+    marginTop: 14,
+    fontSize: 14,
+  },
+
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: T.redLight,
+    borderWidth: 1,
+    borderColor: T.redBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  emptyIcon: {
+    fontSize: 36,
+  },
+  emptyTitle: {
+    color: T.textPrimary,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    color: T.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  // Tab Bar Selector
+  // Filter Row
+  filterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: T.surface,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  filterLabel: {
+    color: T.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // Line Item Layout
+  lineItem: {
+    flexDirection: 'row',
+    backgroundColor: T.surface,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+  },
+  dateBlock: {
+    width: 75,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: T.border,
+    paddingRight: 10,
+  },
+  dayText: {
+    // kept for potential future use
+    display: 'none',
+  },
+  dateText: {
+    color: T.yellow,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  yearText: {
+    color: T.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  mainBlock: {
+    flex: 1,
+    paddingHorizontal: 12,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  timeText: {
+    color: T.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  clientText: {
+    color: T.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  placeText: {
+    color: T.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  rightBlock: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  codeBadgeSmall: {
+    backgroundColor: T.amberLight,
+    borderWidth: 1,
+    borderColor: 'rgba(255,193,7,0.15)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  codeTextSmall: {
+    color: T.yellow,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  sellerBadgeSmall: {
+    backgroundColor: T.surfaceAlt,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  sellerTextSmall: {
+    color: T.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  lineItemCancelled: {
+    borderColor: 'rgba(229,57,53,0.2)',
+    backgroundColor: 'rgba(22,24,34,0.6)',
+  },
+  clientTextCancelled: {
+    textDecorationLine: 'line-through',
+    color: T.textMuted,
+  },
+  noteText: {
+    color: T.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  seeNoteText: {
+    color: T.yellow,
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  cancelledBadge: {
+    backgroundColor: 'rgba(200,62,77,0.15)',
+    borderColor: 'rgba(200,62,77,0.4)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  cancelledText: {
+    color: '#C83E4D',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  tipoBadge: {
+    backgroundColor: 'rgba(99,102,241,0.12)',
+    borderColor: 'rgba(99,102,241,0.3)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    maxWidth: 125,
+  },
+  tipoBadgeGreen: {
+    backgroundColor: 'rgba(46,213,115,0.18)',
+    borderColor: '#2ED573',
+  },
+  tipoText: {
+    color: '#818cf8',
+    fontSize: 11,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  tipoTextGreen: {
+    color: '#2ED573',
+  },
+  notificationBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 95 : 65,
+    left: 16,
+    right: 16,
+    backgroundColor: '#1E293B',
+    borderColor: '#FFC107',
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 14,
+    zIndex: 9999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  notificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  notificationIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  notificationTextWrapper: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  notificationTitle: {
+    color: '#FFC107',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  notificationDesc: {
+    color: '#F1F5F9',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  notificationCloseBtn: {
+    padding: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+  },
+  notificationCloseText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  drawerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    flexDirection: 'row',
+  },
+  leftDrawerContainer: {
+    backgroundColor: '#161822',
+    height: '100%',
+    paddingTop: Platform.OS === 'ios' ? 55 : 30,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2D3A',
+  },
+  drawerTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  closeBtn: {
+    padding: 6,
+  },
+  closeBtnText: {
+    color: '#888',
+    fontSize: 20,
+  },
+  drawerScroll: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    padding: 14,
+    marginVertical: 16,
+    borderWidth: 1,
+    borderColor: '#2A2D3A',
+  },
+  profileAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2A2D3A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileName: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  profileEmail: {
+    color: '#888',
+    fontSize: 12,
+  },
+  roleTagBadge: {
+    backgroundColor: 'rgba(255,85,0,0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  roleTagBadgeText: {
+    color: '#FF5500',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  drawerList: {
+    gap: 6,
+  },
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  drawerIcon: {
+    fontSize: 18,
+    marginRight: 12,
+  },
+  drawerText: {
+    color: '#DDD',
+    fontSize: 15,
+    flex: 1,
+  },
+  drawerArrow: {
+    color: '#666',
+    fontSize: 14,
+  },
+  langValue: {
+    color: '#FF5500',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  dialogOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dialogBox: {
+    backgroundColor: '#1A1C28',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#2A2D3A',
+  },
+  dialogTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  dialogInput: {
+    backgroundColor: '#11131C',
+    borderRadius: 10,
+    padding: 14,
+    color: '#FFF',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2A2D3A',
+    fontSize: 14,
+  },
+  dialogBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 16,
+  },
+  dialogCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#2A2D3A',
+  },
+  dialogCancelText: {
+    color: '#AAA',
+    fontWeight: '600',
+  },
+  dialogSubmitBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#FF5500',
+  },
+  dialogSubmitText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+});

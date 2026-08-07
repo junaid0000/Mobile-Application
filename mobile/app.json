@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Rossomandi Client Service",
+    "slug": "rossomandi-client-service",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "mobile",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/images/logo.png",
+      "bundleIdentifier": "com.rossomand.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Rossomandi service requires access to photo library to upload documents.",
+        "NSCameraUsageDescription": "Rossomandi service requires access to camera to take photos of documents and vehicles."
+      }
+    },
+    "android": {
+      "package": "com.rossomand.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#121212",
+        "foregroundImage": "./assets/images/logo.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#121212",
+          "image": "./assets/images/logo.png",
+          "imageWidth": 200
+        }
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3d29d857-6ead-43b8-b5ef-1f4096cca616"
+      }
+    },
+    "owner": "junaidmunirjanjua"
+  }
+}
