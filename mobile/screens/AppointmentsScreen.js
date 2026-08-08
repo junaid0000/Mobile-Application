@@ -516,19 +516,14 @@ export default function AppointmentsScreen({ navigation, route }) {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      if (isAdminUser) {
-        await fetchSellersList();
-        setSelectedSeller('__ALL__');
-        await fetchAppointments('__ALL__');
-      } else {
-        // Seller: fetch default (server filters by their own code)
-        await fetchAppointments(null);
-        setSelectedSeller(null); // will be set once we get seller_code back
-      }
+      await fetchSellersList();
+      setSelectedSeller('__ALL__');
+      await fetchAppointments('__ALL__');
       setLoading(false);
     };
     init();
   }, []);
+
 
   // When sellerCode is set from the first fetch, update selectedSeller for sellers
   useEffect(() => {
@@ -580,10 +575,9 @@ export default function AppointmentsScreen({ navigation, route }) {
   };
 
   const displayedAppointments = useMemo(() => {
-    const yesterday = getYesterdayDate();
     const map = new Map();
     appointments.forEach(a => {
-      if (a.data_ora && new Date(a.data_ora) >= yesterday) {
+      if (a) {
         const key = a.intorno || `${a.cliente}_${a.data_ora}`;
         if (!map.has(key)) {
           map.set(key, a);
@@ -592,6 +586,7 @@ export default function AppointmentsScreen({ navigation, route }) {
     });
     return Array.from(map.values());
   }, [appointments]);
+
 
   return (
     <View style={s.container}>
@@ -664,8 +659,8 @@ export default function AppointmentsScreen({ navigation, route }) {
           />
         }
       >
-        {/* Dropdown Filter for Admins */}
-        {isAdminUser && sellersList.length > 0 && (
+        {/* Dropdown Filter */}
+        {sellersList.length > 0 && (
           <SellerDropdown
             sellers={sellersList}
             selected={selectedSeller}

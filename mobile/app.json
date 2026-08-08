@@ -18,6 +18,7 @@
     },
     "android": {
       "package": "com.rossomand.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/images/logo.png"
@@ -44,6 +45,10 @@
       ],
       "expo-font"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/3d29d857-6ead-43b8-b5ef-1f4096cca616"
+    },
+    "runtimeVersion": "1.0.0",
     "extra": {
       "eas": {
         "projectId": "3d29d857-6ead-43b8-b5ef-1f4096cca616"
