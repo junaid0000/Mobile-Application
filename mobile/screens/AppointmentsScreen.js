@@ -420,7 +420,8 @@ export default function AppointmentsScreen({ navigation, route }) {
     list.forEach(appt => {
       if (!appt.data_ora || appt.cancellato) return;
 
-      const apptTime = new Date(appt.data_ora);
+      const apptTime = parseSafeDate(appt.data_ora);
+      if (!apptTime) return;
       const diffMs = apptTime.getTime() - now.getTime();
       const diffMinutes = Math.round(diffMs / (1000 * 60));
 
@@ -548,22 +549,65 @@ export default function AppointmentsScreen({ navigation, route }) {
     setRefreshing(false);
   };
 
+  const parseSafeDate = (dateStr) => {
+    if (!dateStr) return null;
+    if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+    let str = String(dateStr).trim();
+    if (str.includes(' ') && !str.includes('T')) {
+      str = str.replace(' ', 'T');
+    }
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+
+    try {
+      const parts = str.split(/[- :T\/]/);
+      if (parts.length >= 3) {
+        let year = parseInt(parts[0], 10);
+        let month = parseInt(parts[1], 10) - 1;
+        let day = parseInt(parts[2], 10);
+        if (parts[0].length === 2 && parts[2].length === 4) {
+          day = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          year = parseInt(parts[2], 10);
+        }
+        const hour = parts[3] ? parseInt(parts[3], 10) : 0;
+        const minute = parts[4] ? parseInt(parts[4], 10) : 0;
+        const second = parts[5] ? parseInt(parts[5], 10) : 0;
+        const fallbackDate = new Date(year, month, day, hour, minute, second);
+        return isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+      }
+    } catch (e) {}
+    return null;
+  };
+
   const getDateString = (dateStr) => {
-    if (!dateStr) return 'SENZA';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
+    const d = parseSafeDate(dateStr);
+    if (!d) return 'SENZA';
+    try {
+      return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
+    } catch (e) {
+      return 'SENZA';
+    }
   };
 
   const getYearString = (dateStr) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.getFullYear().toString();
+    const d = parseSafeDate(dateStr);
+    if (!d) return '';
+    try {
+      return d.getFullYear().toString();
+    } catch (e) {
+      return '';
+    }
   };
 
   const formatTime = (dateStr) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const d = parseSafeDate(dateStr);
+    if (!d) return '';
+    try {
+      return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return '';
+    }
   };
 
   // Get yesterday's date at midnight for comparison
