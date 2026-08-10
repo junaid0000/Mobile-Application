@@ -420,8 +420,7 @@ export default function AppointmentsScreen({ navigation, route }) {
     list.forEach(appt => {
       if (!appt.data_ora || appt.cancellato) return;
 
-      const apptTime = parseSafeDate(appt.data_ora);
-      if (!apptTime) return;
+      const apptTime = new Date(appt.data_ora);
       const diffMs = apptTime.getTime() - now.getTime();
       const diffMinutes = Math.round(diffMs / (1000 * 60));
 
@@ -515,20 +514,23 @@ export default function AppointmentsScreen({ navigation, route }) {
 
   // Initial load
   useEffect(() => {
-    let isMounted = true;
     const init = async () => {
       setLoading(true);
       await fetchSellersList();
-      const defaultFilter = (userRole === 'admin' || !sellerCode) ? '__ALL__' : sellerCode;
-      if (isMounted) {
-        setSelectedSeller(defaultFilter);
-        await fetchAppointments(defaultFilter);
-        setLoading(false);
-      }
+      setSelectedSeller('__ALL__');
+      await fetchAppointments('__ALL__');
+      setLoading(false);
     };
     init();
-    return () => { isMounted = false; };
   }, []);
+
+
+  // When sellerCode is set from the first fetch, update selectedSeller for sellers
+  useEffect(() => {
+    if (sellerCode && userRole !== 'admin' && selectedSeller === null) {
+      setSelectedSeller(sellerCode);
+    }
+  }, [sellerCode]);
 
   // When dropdown selection changes, re-fetch
   const handleSelectSeller = async (code) => {
@@ -546,65 +548,22 @@ export default function AppointmentsScreen({ navigation, route }) {
     setRefreshing(false);
   };
 
-  const parseSafeDate = (dateStr) => {
-    if (!dateStr) return null;
-    if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
-    let str = String(dateStr).trim();
-    if (str.includes(' ') && !str.includes('T')) {
-      str = str.replace(' ', 'T');
-    }
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) return d;
-
-    try {
-      const parts = str.split(/[- :T\/]/);
-      if (parts.length >= 3) {
-        let year = parseInt(parts[0], 10);
-        let month = parseInt(parts[1], 10) - 1;
-        let day = parseInt(parts[2], 10);
-        if (parts[0].length === 2 && parts[2].length === 4) {
-          day = parseInt(parts[0], 10);
-          month = parseInt(parts[1], 10) - 1;
-          year = parseInt(parts[2], 10);
-        }
-        const hour = parts[3] ? parseInt(parts[3], 10) : 0;
-        const minute = parts[4] ? parseInt(parts[4], 10) : 0;
-        const second = parts[5] ? parseInt(parts[5], 10) : 0;
-        const fallbackDate = new Date(year, month, day, hour, minute, second);
-        return isNaN(fallbackDate.getTime()) ? null : fallbackDate;
-      }
-    } catch (e) {}
-    return null;
-  };
-
   const getDateString = (dateStr) => {
-    const d = parseSafeDate(dateStr);
-    if (!d) return 'SENZA';
-    try {
-      return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
-    } catch (e) {
-      return 'SENZA';
-    }
+    if (!dateStr) return 'SENZA';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
   };
 
   const getYearString = (dateStr) => {
-    const d = parseSafeDate(dateStr);
-    if (!d) return '';
-    try {
-      return d.getFullYear().toString();
-    } catch (e) {
-      return '';
-    }
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.getFullYear().toString();
   };
 
   const formatTime = (dateStr) => {
-    const d = parseSafeDate(dateStr);
-    if (!d) return '';
-    try {
-      return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    } catch (e) {
-      return '';
-    }
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   };
 
   // Get yesterday's date at midnight for comparison
@@ -686,45 +645,11 @@ export default function AppointmentsScreen({ navigation, route }) {
       </View>
 
       {/* ── Main Content ────────────────────────────────────────── */}
-      {/* ── Main Content (Virtualized FlatList for fast 800+ row rendering) ────────── */}
-      <FlatList
-        data={displayedAppointments}
-        keyExtractor={(item, index) => item?.intorno ? `${item.intorno}-${index}` : `item-${index}`}
+      <ScrollView
         style={s.scrollArea}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={true}
-        initialNumToRender={15}
-        maxToRenderPerBatch={15}
-        windowSize={5}
-        removeClippedSubviews={false}
-        ListHeaderComponent={
-          sellersList.length > 0 ? (
-            <SellerDropdown
-              sellers={sellersList}
-              selected={selectedSeller}
-              onSelect={handleSelectSeller}
-              userSellerCode={sellerCode}
-            />
-          ) : null
-        }
-        ListEmptyComponent={
-          loading ? (
-            <View style={s.loadingBox}>
-              <ActivityIndicator color={T.red} size="large" />
-              <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
-            </View>
-          ) : (
-            <View style={s.emptyState}>
-              <View style={s.emptyIconCircle}>
-                <Text style={s.emptyIcon}>📅</Text>
-              </View>
-              <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
-              <Text style={s.emptySubtitle}>
-                Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
-              </Text>
-            </View>
-          )
-        }
+        persistentScrollbar={true}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -733,78 +658,111 @@ export default function AppointmentsScreen({ navigation, route }) {
             colors={[T.red]}
           />
         }
-        renderItem={({ item: appt, index }) => (
-          <View
-            key={`${appt.intorno}-${index}`}
-            style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
-          >
-            {/* Left: Date & Year Block */}
-            <View style={s.dateBlock}>
-              <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
-              <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
-            </View>
+      >
+        {/* Dropdown Filter */}
+        {sellersList.length > 0 && (
+          <SellerDropdown
+            sellers={sellersList}
+            selected={selectedSeller}
+            onSelect={handleSelectSeller}
+            userSellerCode={sellerCode}
+          />
+        )}
 
-            {/* Middle: Details Row */}
-            <View style={s.mainBlock}>
-              <View style={s.timeRow}>
-                <Text style={s.timeText}>
-                  🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
-                </Text>
-              </View>
-              <Text
-                style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
-                numberOfLines={1}
-              >
-                {appt.cliente || 'Cliente Sconosciuto'}
-              </Text>
-              <Text style={s.placeText} numberOfLines={1}>
-                📍 {appt.luogo || 'Sede non specificata'}
-              </Text>
-              {appt.note ? (
-                expandedNotes[appt.intorno] ? (
-                  <TouchableOpacity onPress={() => setExpandedNotes(prev => ({ ...prev, [appt.intorno]: !prev[appt.intorno] }))}>
-                    <Text style={s.noteText}>📝 {appt.note}</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity onPress={() => setExpandedNotes(prev => ({ ...prev, [appt.intorno]: !prev[appt.intorno] }))}>
-                    <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
-                  </TouchableOpacity>
-                )
-              ) : null}
+        {loading ? (
+          <View style={s.loadingBox}>
+            <ActivityIndicator color={T.red} size="large" />
+            <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
+          </View>
+        ) : displayedAppointments.length === 0 ? (
+          /* Empty State */
+          <View style={s.emptyState}>
+            <View style={s.emptyIconCircle}>
+              <Text style={s.emptyIcon}>📅</Text>
             </View>
-
-            {/* Right: Badge Meta */}
-            <View style={s.rightBlock}>
-              <View style={s.codeBadgeSmall}>
-                <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
+            <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
+            <Text style={s.emptySubtitle}>
+              Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
+            </Text>
+          </View>
+        ) : (
+          /* Line by Line Appointment list */
+          displayedAppointments.map((appt, idx) => (
+            <View
+              key={`${appt.intorno}-${idx}`}
+              style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
+            >
+              {/* Left: Date & Year Block */}
+              <View style={s.dateBlock}>
+                <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
+                <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
               </View>
-              {appt.venditore && (
-                <View style={s.sellerBadgeSmall}>
-                  <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
-                </View>
-              )}
-              {appt.tipo ? (
-                <View style={[
-                  s.tipoBadge,
-                  appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
-                ]}>
-                  <Text style={[
-                    s.tipoText,
-                    appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
-                  ]}>
-                    {appt.tipo?.toLowerCase().includes('telefon') ? `☎️ ${appt.tipo}` : appt.tipo}
+
+              {/* Middle: Details Row */}
+              <View style={s.mainBlock}>
+                <View style={s.timeRow}>
+                  <Text style={s.timeText}>
+                    🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
                   </Text>
                 </View>
-              ) : null}
-              {appt.cancellato && (
-                <View style={s.cancelledBadge}>
-                  <Text style={s.cancelledText}>✕ Annullato</Text>
+                <Text
+                  style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
+                  numberOfLines={1}
+                >
+                  {appt.cliente || 'Cliente Sconosciuto'}
+                </Text>
+                <Text style={s.placeText} numberOfLines={1}>
+                  📍 {appt.luogo || 'Sede non specificata'}
+                </Text>
+                {appt.note ? (
+                  expandedNotes[appt.intorno] ? (
+                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+                      <Text style={s.noteText}>📝 {appt.note}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+                      <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
+                    </TouchableOpacity>
+                  )
+                ) : null}
+              </View>
+
+              {/* Right: Badge Meta */}
+              <View style={s.rightBlock}>
+                <View style={s.codeBadgeSmall}>
+                  <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
                 </View>
-              )}
+                {appt.venditore && (
+                  <View style={s.sellerBadgeSmall}>
+                    <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
+                  </View>
+                )}
+                {appt.tipo ? (
+                  <View style={[
+                    s.tipoBadge,
+                    appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
+                  ]}>
+                    <Text style={[
+                      s.tipoText,
+                      appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
+                    ]}>
+                      {appt.tipo?.toLowerCase().includes('telefon') ? `☎️ ${appt.tipo}` : appt.tipo}
+                    </Text>
+                  </View>
+                ) : null}
+                {appt.cancellato && (
+                  <View style={s.cancelledBadge}>
+                    <Text style={s.cancelledText}>✕ Annullato</Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
+          ))
         )}
-      />
+
+        {/* Bottom Spacer */}
+        <View style={{ height: 30 }} />
+      </ScrollView>
 
       {/* ── Left-Side Slide-Out Drawer Modal ──────────────────────────── */}
       <Modal

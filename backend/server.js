@@ -63,8 +63,6 @@ const initDb = async () => {
       );
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_appointments_venditore ON appointments(venditore);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_appointments_data_ora ON appointments(data_ora);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_appointments_venditore_data_ora ON appointments(venditore, data_ora);`);
     await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS note TEXT;`);
     await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS cancellato BOOLEAN DEFAULT FALSE;`);
     await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tipo VARCHAR(100);`);
@@ -838,12 +836,7 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
     queryText += ' ORDER BY data_ora ASC';
 
     const appointmentsResult = await db.query(queryText, queryParams);
-    let appointments = (appointmentsResult.rows || []).map(row => {
-      if (row.data_ora && typeof row.data_ora === 'string' && row.data_ora.includes(' ') && !row.data_ora.includes('T')) {
-        row.data_ora = row.data_ora.replace(' ', 'T');
-      }
-      return row;
-    });
+    let appointments = appointmentsResult.rows;
 
     res.json({
       seller_code: venditore_code || 'ALL',
