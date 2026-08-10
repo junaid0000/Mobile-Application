@@ -560,34 +560,48 @@ export default function AppointmentsScreen({ navigation, route }) {
     setRefreshing(false);
   };
 
+  const MONTHS_IT = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
+
   const getDateString = (dateStr) => {
-    const d = parseSafeDate(dateStr);
-    if (!d) return 'SENZA';
-    try {
-      return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
-    } catch (e) {
-      return 'SENZA';
+    if (!dateStr) return 'SENZA';
+    const str = String(dateStr).trim();
+    if (str.length >= 10) {
+      const parts = str.split('T')[0].split(' ')[0].split('-');
+      if (parts.length === 3) {
+        const monthIdx = parseInt(parts[1], 10) - 1;
+        const day = parts[2];
+        if (monthIdx >= 0 && monthIdx < 12) {
+          return `${day} ${MONTHS_IT[monthIdx]}`;
+        }
+      }
     }
+    return 'SENZA';
   };
 
   const getYearString = (dateStr) => {
-    const d = parseSafeDate(dateStr);
-    if (!d) return '';
-    try {
-      return d.getFullYear().toString();
-    } catch (e) {
-      return '';
+    if (!dateStr) return '';
+    const str = String(dateStr).trim();
+    if (str.length >= 4) {
+      return str.substring(0, 4);
     }
+    return '';
   };
 
   const formatTime = (dateStr) => {
-    const d = parseSafeDate(dateStr);
-    if (!d) return '';
-    try {
-      return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    } catch (e) {
-      return '';
+    if (!dateStr) return '';
+    const str = String(dateStr).trim();
+    if (str.includes('T')) {
+      const timePart = str.split('T')[1];
+      if (timePart && timePart.length >= 5) {
+        return timePart.substring(0, 5);
+      }
+    } else if (str.includes(' ')) {
+      const timePart = str.split(' ')[1];
+      if (timePart && timePart.length >= 5) {
+        return timePart.substring(0, 5);
+      }
     }
+    return '';
   };
 
   // Get yesterday's date at midnight for comparison
