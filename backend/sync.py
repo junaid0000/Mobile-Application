@@ -410,56 +410,15 @@ def upsert_to_postgresql(data):
         
         execute_values(cursor, upsert_query, deduplicated_data)
         pg_conn.commit()
-        print(f"Successfully synced {len(deduplicated_data)} unique records to PostgreSQL.")
+        print(f"[OK] Successfully synced {len(deduplicated_data)} unique records directly to PostgreSQL.")
 
-        # Push to Render cloud backend so remote mobile devices on Render receive live appointments
+        # Keep-alive ping to keep Render server awake
         try:
-            import json, urllib.request, urllib.error
-            payload = []
-            for row in deduplicated_data:
-                dt_str = row[3].strftime('%Y-%m-%d %H:%M:%S') if hasattr(row[3], 'strftime') else (str(row[3]) if row[3] else None)
-                payload.append({
-                    'intorno': row[0],
-                    'cliente': row[1],
-                    'venditore': row[2],
-                    'data_ora': dt_str,
-                    'luogo': row[4],
-                    'note': row[5],
-                    'cancellato': bool(row[6]),
-                    'tipo': row[7]
-                })
-
-            chunk_size = 100
-            for target_url in ['https://rossomandi-backend.onrender.com/api/sync/push-appointments', 'http://127.0.0.1:5000/api/sync/push-appointments']:
-                try:
-                    for i in range(0, len(payload), chunk_size):
-                        chunk = payload[i:i + chunk_size]
-                        json_bytes = json.dumps({'appointments': chunk}).encode('utf-8')
-                        req = urllib.request.Request(
-                            target_url,
-                            data=json_bytes,
-                            headers={
-                                'Content-Type': 'application/json',
-                                'x-sync-key': 'rossomandi_secret_sync_2026'
-                            }
-                        )
-                        with urllib.request.urlopen(req, timeout=30) as resp:
-                            pass
-                    print(f"[OK] Successfully pushed {len(payload)} appointments to {target_url}!")
-                except Exception as chunk_err:
-                    print(f"Sync push notice for {target_url}: {chunk_err}")
-
-            # Keep-alive ping to keep Render server awake at all times
-            try:
-                urllib.request.urlopen('https://rossomandi-backend.onrender.com/', timeout=10)
-            except Exception:
-                pass
-
-        except Exception as push_err:
-            print(f"Cloud push notice: {push_err}")
+            urllib.request.urlopen('https://rossomandi-backend.onrender.com/', timeout=10)
+        except Exception:
+            pass
 
     except Exception as e:
-
         print(f"Error writing to PostgreSQL: {e}")
         if pg_conn:
             pg_conn.rollback()
@@ -511,12 +470,11 @@ def main():
                 print("[Sync] Access DB not found. Checked paths:", flush=True)
                 for p in candidate_paths:
                     print(f"  - {p}", flush=True)
-                print("[Sync] Waiting 7 seconds...", flush=True)
                 
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
             
-        time.sleep(7)
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
