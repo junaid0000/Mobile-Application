@@ -837,7 +837,8 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
 
     queryText += ' ORDER BY data_ora ASC';
 
-    let appointments = appointmentsResult.rows.map(row => {
+    const appointmentsResult = await db.query(queryText, queryParams);
+    let appointments = (appointmentsResult.rows || []).map(row => {
       if (row.data_ora && typeof row.data_ora === 'string' && row.data_ora.includes(' ') && !row.data_ora.includes('T')) {
         row.data_ora = row.data_ora.replace(' ', 'T');
       }
