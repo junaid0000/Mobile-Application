@@ -515,23 +515,20 @@ export default function AppointmentsScreen({ navigation, route }) {
 
   // Initial load
   useEffect(() => {
+    let isMounted = true;
     const init = async () => {
       setLoading(true);
       await fetchSellersList();
-      setSelectedSeller('__ALL__');
-      await fetchAppointments('__ALL__');
-      setLoading(false);
+      const defaultFilter = (userRole === 'admin' || !sellerCode) ? '__ALL__' : sellerCode;
+      if (isMounted) {
+        setSelectedSeller(defaultFilter);
+        await fetchAppointments(defaultFilter);
+        setLoading(false);
+      }
     };
     init();
+    return () => { isMounted = false; };
   }, []);
-
-
-  // When sellerCode is set from the first fetch, update selectedSeller for sellers
-  useEffect(() => {
-    if (sellerCode && userRole !== 'admin' && selectedSeller === null) {
-      setSelectedSeller(sellerCode);
-    }
-  }, [sellerCode]);
 
   // When dropdown selection changes, re-fetch
   const handleSelectSeller = async (code) => {
@@ -699,7 +696,7 @@ export default function AppointmentsScreen({ navigation, route }) {
         initialNumToRender={15}
         maxToRenderPerBatch={15}
         windowSize={5}
-        removeClippedSubviews={Platform.OS === 'android'}
+        removeClippedSubviews={false}
         ListHeaderComponent={
           sellersList.length > 0 ? (
             <SellerDropdown
