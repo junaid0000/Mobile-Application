@@ -645,11 +645,45 @@ export default function AppointmentsScreen({ navigation, route }) {
       </View>
 
       {/* ── Main Content ────────────────────────────────────────── */}
-      <ScrollView
+      {/* ── Main Content (Virtualized FlatList for fast 800+ row rendering) ────────── */}
+      <FlatList
+        data={displayedAppointments}
+        keyExtractor={(item, index) => item?.intorno ? `${item.intorno}-${index}` : `item-${index}`}
         style={s.scrollArea}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={true}
-        persistentScrollbar={true}
+        initialNumToRender={15}
+        maxToRenderPerBatch={15}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={
+          sellersList.length > 0 ? (
+            <SellerDropdown
+              sellers={sellersList}
+              selected={selectedSeller}
+              onSelect={handleSelectSeller}
+              userSellerCode={sellerCode}
+            />
+          ) : null
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={s.loadingBox}>
+              <ActivityIndicator color={T.red} size="large" />
+              <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
+            </View>
+          ) : (
+            <View style={s.emptyState}>
+              <View style={s.emptyIconCircle}>
+                <Text style={s.emptyIcon}>📅</Text>
+              </View>
+              <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
+              <Text style={s.emptySubtitle}>
+                Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
+              </Text>
+            </View>
+          )
+        }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -658,111 +692,78 @@ export default function AppointmentsScreen({ navigation, route }) {
             colors={[T.red]}
           />
         }
-      >
-        {/* Dropdown Filter */}
-        {sellersList.length > 0 && (
-          <SellerDropdown
-            sellers={sellersList}
-            selected={selectedSeller}
-            onSelect={handleSelectSeller}
-            userSellerCode={sellerCode}
-          />
-        )}
-
-        {loading ? (
-          <View style={s.loadingBox}>
-            <ActivityIndicator color={T.red} size="large" />
-            <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
-          </View>
-        ) : displayedAppointments.length === 0 ? (
-          /* Empty State */
-          <View style={s.emptyState}>
-            <View style={s.emptyIconCircle}>
-              <Text style={s.emptyIcon}>📅</Text>
+        renderItem={({ item: appt, index }) => (
+          <View
+            key={`${appt.intorno}-${index}`}
+            style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
+          >
+            {/* Left: Date & Year Block */}
+            <View style={s.dateBlock}>
+              <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
+              <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
             </View>
-            <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
-            <Text style={s.emptySubtitle}>
-              Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
-            </Text>
-          </View>
-        ) : (
-          /* Line by Line Appointment list */
-          displayedAppointments.map((appt, idx) => (
-            <View
-              key={`${appt.intorno}-${idx}`}
-              style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
-            >
-              {/* Left: Date & Year Block */}
-              <View style={s.dateBlock}>
-                <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
-                <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
-              </View>
 
-              {/* Middle: Details Row */}
-              <View style={s.mainBlock}>
-                <View style={s.timeRow}>
-                  <Text style={s.timeText}>
-                    🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
+            {/* Middle: Details Row */}
+            <View style={s.mainBlock}>
+              <View style={s.timeRow}>
+                <Text style={s.timeText}>
+                  🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
+                </Text>
+              </View>
+              <Text
+                style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
+                numberOfLines={1}
+              >
+                {appt.cliente || 'Cliente Sconosciuto'}
+              </Text>
+              <Text style={s.placeText} numberOfLines={1}>
+                📍 {appt.luogo || 'Sede non specificata'}
+              </Text>
+              {appt.note ? (
+                expandedNotes[appt.intorno] ? (
+                  <TouchableOpacity onPress={() => setExpandedNotes(prev => ({ ...prev, [appt.intorno]: !prev[appt.intorno] }))}>
+                    <Text style={s.noteText}>📝 {appt.note}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={() => setExpandedNotes(prev => ({ ...prev, [appt.intorno]: !prev[appt.intorno] }))}>
+                    <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
+                  </TouchableOpacity>
+                )
+              ) : null}
+            </View>
+
+            {/* Right: Badge Meta */}
+            <View style={s.rightBlock}>
+              <View style={s.codeBadgeSmall}>
+                <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
+              </View>
+              {appt.venditore && (
+                <View style={s.sellerBadgeSmall}>
+                  <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
+                </View>
+              )}
+              {appt.tipo ? (
+                <View style={[
+                  s.tipoBadge,
+                  appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
+                ]}>
+                  <Text style={[
+                    s.tipoText,
+                    appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
+                  ]}>
+                    {appt.tipo?.toLowerCase().includes('telefon') ? `☎️ ${appt.tipo}` : appt.tipo}
                   </Text>
                 </View>
-                <Text
-                  style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
-                  numberOfLines={1}
-                >
-                  {appt.cliente || 'Cliente Sconosciuto'}
-                </Text>
-                <Text style={s.placeText} numberOfLines={1}>
-                  📍 {appt.luogo || 'Sede non specificata'}
-                </Text>
-                {appt.note ? (
-                  expandedNotes[appt.intorno] ? (
-                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
-                      <Text style={s.noteText}>📝 {appt.note}</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
-                      <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
-                    </TouchableOpacity>
-                  )
-                ) : null}
-              </View>
-
-              {/* Right: Badge Meta */}
-              <View style={s.rightBlock}>
-                <View style={s.codeBadgeSmall}>
-                  <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
+              ) : null}
+              {appt.cancellato && (
+                <View style={s.cancelledBadge}>
+                  <Text style={s.cancelledText}>✕ Annullato</Text>
                 </View>
-                {appt.venditore && (
-                  <View style={s.sellerBadgeSmall}>
-                    <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
-                  </View>
-                )}
-                {appt.tipo ? (
-                  <View style={[
-                    s.tipoBadge,
-                    appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
-                  ]}>
-                    <Text style={[
-                      s.tipoText,
-                      appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
-                    ]}>
-                      {appt.tipo?.toLowerCase().includes('telefon') ? `☎️ ${appt.tipo}` : appt.tipo}
-                    </Text>
-                  </View>
-                ) : null}
-                {appt.cancellato && (
-                  <View style={s.cancelledBadge}>
-                    <Text style={s.cancelledText}>✕ Annullato</Text>
-                  </View>
-                )}
-              </View>
+              )}
             </View>
-          ))
+          </View>
         )}
-
-        {/* Bottom Spacer */}
-        <View style={{ height: 30 }} />
-      </ScrollView>
+      />
 
       {/* ── Left-Side Slide-Out Drawer Modal ──────────────────────────── */}
       <Modal
