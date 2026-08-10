@@ -565,14 +565,16 @@ export default function AppointmentsScreen({ navigation, route }) {
   // When dropdown selection changes, re-fetch
   const handleSelectSeller = async (code) => {
     setSelectedSeller(code);
+    setRenderLimit(30);
     setLoading(true);
     await fetchAppointments(code);
-    setLoading(false);
+    setTimeout(() => setLoading(false), 50);
   };
 
   // Pull-to-refresh
   const onRefresh = async () => {
     setRefreshing(true);
+    setRenderLimit(30);
     await fetchSellersList();
     await fetchAppointments(selectedSeller);
     setRefreshing(false);

@@ -816,8 +816,10 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
       emailLower.includes('valentina') ||
       emailLower.includes('test');
 
-    // Fetch appointments gracefully
+    // Fetch appointments gracefully (default to active appointments from yesterday onwards)
     const filterVenditore = req.query.venditore;
+    const includeHistory = req.query.all_history === 'true';
+
     let queryText = 'SELECT intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo FROM appointments';
     let queryParams = [];
 
@@ -830,6 +832,14 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
       if (parseInt(checkCount.rows[0].count, 10) > 0) {
         queryText += ' WHERE venditore ILIKE $1';
         queryParams.push(venditore_code);
+      }
+    }
+
+    if (!includeHistory) {
+      if (queryParams.length > 0) {
+        queryText += " AND (data_ora >= (CURRENT_DATE - INTERVAL '1 day') OR data_ora IS NULL)";
+      } else {
+        queryText += " WHERE (data_ora >= (CURRENT_DATE - INTERVAL '1 day') OR data_ora IS NULL)";
       }
     }
 

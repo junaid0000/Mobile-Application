@@ -35,8 +35,7 @@ export default function OfficeChatScreen({ navigation, route }) {
     fetchChatSettings();
     const interval = setInterval(() => {
       fetchMessages();
-      fetchChatSettings();
-    }, 3000);
+    }, 6000);
     return () => clearInterval(interval);
   }, []);
 
