@@ -531,7 +531,7 @@ export default function AppointmentsScreen({ navigation, route }) {
       await fetchSellersList();
       setSelectedSeller('__ALL__');
       await fetchAppointments('__ALL__');
-      setLoading(false);
+      setTimeout(() => setLoading(false), 50);
     };
     init();
   }, []);

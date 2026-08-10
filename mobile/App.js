@@ -12,9 +12,28 @@ import AppointmentsScreen from './screens/AppointmentsScreen';
 import OfficeChatScreen from './screens/OfficeChatScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
+import * as Updates from 'expo-updates';
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  React.useEffect(() => {
+    async function checkForUpdates() {
+      if (!__DEV__) {
+        try {
+          const update = await Updates.checkForUpdateAsync();
+          if (update.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            await Updates.reloadAsync();
+          }
+        } catch (e) {
+          console.log('Update check note:', e.message);
+        }
+      }
+    }
+    checkForUpdates();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>
