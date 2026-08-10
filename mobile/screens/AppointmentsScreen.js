@@ -774,6 +774,18 @@ export default function AppointmentsScreen({ navigation, route }) {
         </View>
       </View>
 
+      {/* ── Seller Filter Dropdown Bar ─────────────────────────── */}
+      {sellersList.length > 0 && !loading && (
+        <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+          <SellerDropdown
+            sellers={sellersList}
+            selected={selectedSeller}
+            onSelect={handleSelectSeller}
+            userSellerCode={sellerCode}
+          />
+        </View>
+      )}
+
       {/* ── Main Content ────────────────────────────────────────── */}
       {loading ? (
         <View style={s.loadingBox}>
@@ -789,18 +801,13 @@ export default function AppointmentsScreen({ navigation, route }) {
           renderItem={renderAppointmentItem}
           initialNumToRender={15}
           maxToRenderPerBatch={20}
-          windowSize={10}
+          windowSize={5}
+          getItemLayout={(data, index) => ({
+            length: 82,
+            offset: 82 * index,
+            index,
+          })}
           removeClippedSubviews={Platform.OS === 'android'}
-          ListHeaderComponent={
-            sellersList.length > 0 ? (
-              <SellerDropdown
-                sellers={sellersList}
-                selected={selectedSeller}
-                onSelect={handleSelectSeller}
-                userSellerCode={sellerCode}
-              />
-            ) : null
-          }
           ListEmptyComponent={
             <View style={s.emptyState}>
               <View style={s.emptyIconCircle}>
