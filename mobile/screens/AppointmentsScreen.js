@@ -428,7 +428,17 @@ export default function AppointmentsScreen({ navigation, route }) {
   const checkUpcomingNotifications = useCallback((list) => {
     if (!list || list.length === 0 || !notifications) return;
     const now = new Date();
-    list.forEach(appt => {
+    // Format today date string "YYYY-MM-DD"
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayPrefix = `${year}-${month}-${day}`;
+
+    // Filter to only today's appointments for fast evaluation
+    const todayList = list.filter(a => a && a.data_ora && String(a.data_ora).startsWith(todayPrefix));
+    if (todayList.length === 0) return;
+
+    todayList.forEach(appt => {
       if (!appt.data_ora || appt.cancellato) return;
 
       const apptTime = parseSafeDate(appt.data_ora);
@@ -529,8 +539,9 @@ export default function AppointmentsScreen({ navigation, route }) {
     const init = async () => {
       setLoading(true);
       await fetchSellersList();
-      setSelectedSeller('__ALL__');
-      await fetchAppointments('__ALL__');
+      const initialSellerFilter = (!isAdminUser && (user?.venditore_code || sellerCode)) ? (user?.venditore_code || sellerCode) : '__ALL__';
+      setSelectedSeller(initialSellerFilter);
+      await fetchAppointments(initialSellerFilter);
       setTimeout(() => setLoading(false), 50);
     };
     init();
