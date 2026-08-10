@@ -449,6 +449,12 @@ def upsert_to_postgresql(data):
                 except Exception as chunk_err:
                     print(f"Sync push notice for {target_url}: {chunk_err}")
 
+            # Keep-alive ping to keep Render server awake at all times
+            try:
+                urllib.request.urlopen('https://rossomandi-backend.onrender.com/', timeout=10)
+            except Exception:
+                pass
+
         except Exception as push_err:
             print(f"Cloud push notice: {push_err}")
 
