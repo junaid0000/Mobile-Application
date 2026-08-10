@@ -631,10 +631,7 @@ export default function AppointmentsScreen({ navigation, route }) {
   };
 
   const renderAppointmentItem = useCallback(({ item: appt, index }) => (
-    <View
-      key={`${appt.intorno}-${index}`}
-      style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
-    >
+    <View style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}>
       {/* Left: Date & Year Block */}
       <View style={s.dateBlock}>
         <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
@@ -702,6 +699,8 @@ export default function AppointmentsScreen({ navigation, route }) {
     </View>
   ), [expandedNotes]);
 
+  const [renderLimit, setRenderLimit] = useState(30);
+
   const displayedAppointments = useMemo(() => {
     const map = new Map();
     appointments.forEach(a => {
@@ -714,6 +713,16 @@ export default function AppointmentsScreen({ navigation, route }) {
     });
     return Array.from(map.values());
   }, [appointments]);
+
+  const visibleAppointments = useMemo(() => {
+    return displayedAppointments.slice(0, renderLimit);
+  }, [displayedAppointments, renderLimit]);
+
+  const handleEndReached = () => {
+    if (renderLimit < displayedAppointments.length) {
+      setRenderLimit(prev => Math.min(prev + 40, displayedAppointments.length));
+    }
+  };
 
 
   return (
@@ -796,7 +805,7 @@ export default function AppointmentsScreen({ navigation, route }) {
         <FlatList
           style={s.scrollArea}
           contentContainerStyle={s.scrollContent}
-          data={displayedAppointments}
+          data={visibleAppointments}
           keyExtractor={(item, index) => item.intorno || `${item.cliente}_${item.data_ora}_${index}`}
           renderItem={renderAppointmentItem}
           initialNumToRender={15}
@@ -807,6 +816,8 @@ export default function AppointmentsScreen({ navigation, route }) {
             offset: 82 * index,
             index,
           })}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
           removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <View style={s.emptyState}>
