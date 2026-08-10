@@ -491,6 +491,11 @@ export default function AppointmentsScreen({ navigation, route }) {
     });
   }, [notifications]);
 
+  const appointmentsRef = useRef(appointments);
+  useEffect(() => {
+    appointmentsRef.current = appointments;
+  }, [appointments]);
+
   // Fetch sellers list for the dropdown
   const fetchSellersList = useCallback(async () => {
     try {
@@ -517,22 +522,24 @@ export default function AppointmentsScreen({ navigation, route }) {
       setAppointments(list);
       checkUpcomingNotifications(list);
 
-      if (!sellerCode && res.data.seller_code) {
-        setSellerCode(res.data.seller_code);
+      if (res.data.seller_code) {
+        setSellerCode(prev => prev || res.data.seller_code);
       }
     } catch (err) {
       console.error('Error fetching appointments:', err);
       setAppointments([]);
     }
-  }, [token, sellerCode, checkUpcomingNotifications]);
+  }, [token, checkUpcomingNotifications]);
 
   // Periodic interval to check upcoming appointments every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      checkUpcomingNotifications(appointments);
+      if (appointmentsRef.current && appointmentsRef.current.length > 0) {
+        checkUpcomingNotifications(appointmentsRef.current);
+      }
     }, 30000);
     return () => clearInterval(interval);
-  }, [appointments, checkUpcomingNotifications]);
+  }, [checkUpcomingNotifications]);
 
   // Initial load
   useEffect(() => {
