@@ -235,11 +235,11 @@ export default function OfficeChatScreen({ navigation, route }) {
         )}
       </View>
 
-      {/* Keyboard-aware container — pushes input above keyboard */}
+      {/* Keyboard-aware container — pushes input cleanly above keyboard */}
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 25}
       >
         {/* Message List */}
         <FlatList
@@ -400,6 +400,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E202C',
     borderTopWidth: 1,
     borderTopColor: '#2A2D3A',
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
   },
   inputContainer: {
     flexDirection: 'row',

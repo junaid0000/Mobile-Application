@@ -786,7 +786,7 @@ export default function AppointmentsScreen({ navigation, route }) {
       </View>
 
       {/* ── Seller Filter Dropdown Bar ─────────────────────────── */}
-      {sellersList.length > 0 && !loading && (
+      {isAdminUser && sellersList.length > 0 && !loading && (
         <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
           <SellerDropdown
             sellers={sellersList}

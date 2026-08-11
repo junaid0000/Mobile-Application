@@ -823,15 +823,23 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
     let queryText = 'SELECT intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo FROM appointments';
     let queryParams = [];
 
-    if (filterVenditore && filterVenditore !== '__ALL__') {
-      queryText += ' WHERE venditore ILIKE $1';
-      queryParams.push(filterVenditore);
-    } else if (!isAdminUser && venditore_code) {
-      // Check if seller code has appointments in DB
-      const checkCount = await db.query('SELECT COUNT(*) FROM appointments WHERE venditore ILIKE $1', [venditore_code]);
-      if (parseInt(checkCount.rows[0].count, 10) > 0) {
+    if (!isAdminUser) {
+      // Non-admin sellers can ONLY view their own appointments
+      if (venditore_code) {
         queryText += ' WHERE venditore ILIKE $1';
         queryParams.push(venditore_code);
+      } else {
+        // If non-admin seller has no seller code assigned, return empty list
+        return res.json({
+          seller_code: 'NONE',
+          appointments: []
+        });
+      }
+    } else {
+      // Admin users can see all appointments or filter by a specific seller
+      if (filterVenditore && filterVenditore !== '__ALL__') {
+        queryText += ' WHERE venditore ILIKE $1';
+        queryParams.push(filterVenditore);
       }
     }
 
