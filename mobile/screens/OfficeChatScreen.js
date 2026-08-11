@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E202C',
     borderTopWidth: 1,
     borderTopColor: '#2A2D3A',
-    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 28,
   },
   inputContainer: {
     flexDirection: 'row',
