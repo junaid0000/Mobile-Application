@@ -16,11 +16,13 @@ import {
   Switch
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BASE_URL } from '../config/apiConfig';
 
 const API_URL = `${BASE_URL}/api`;
 
 export default function OfficeChatScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const { user, token } = route?.params || {};
 
   const [messages, setMessages] = useState([]);
@@ -238,8 +240,8 @@ export default function OfficeChatScreen({ navigation, route }) {
       {/* Keyboard-aware container — pushes input cleanly above keyboard */}
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 25}
+        behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Message List */}
         <FlatList
@@ -259,7 +261,7 @@ export default function OfficeChatScreen({ navigation, route }) {
             <Text style={styles.disabledText}>🚫 La chat è disabilitata dall'amministratore</Text>
           </View>
         ) : (
-          <View style={styles.inputContainerWrapper}>
+          <View style={[styles.inputContainerWrapper, { paddingBottom: Math.max(insets.bottom + 16, Platform.OS === 'android' ? 48 : 28) }]}>
             {replyingTo && (
               <View style={styles.replyPreview}>
                 <View style={{ flex: 1 }}>
