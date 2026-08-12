@@ -783,7 +783,7 @@ export default function AppointmentsScreen({ navigation, route }) {
             <View>
               <Text style={s.headerTitle}>Appuntamenti</Text>
               <Text style={s.headerSubTitle}>
-                {sellerCode ? `Codice: ${sellerCode}` : 'Tutti I Venditori'}
+                {sellerCode ? `Codice: ${sellerCode}` : 'Tutti I Venditori'} • <Text style={{ color: '#00E676', fontWeight: 'bold' }}>🟢 Live Sync 5s</Text>
               </Text>
             </View>
           </View>
