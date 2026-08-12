@@ -336,7 +336,7 @@ export default function AdminDashboard({ navigation, route }) {
 
         {/* ── Footer ──────────────────────────────────────────────── */}
         <View style={styles.footerContainer}>
-          <Text style={styles.footerText}>Rossomandi Automotive © 2026 • v1.0.1 (Build 20)</Text>
+          <Text style={styles.footerText}>Rossomandi Automotive © 2026 • v1.0.2 (Build 21)</Text>
         </View>
       </View>
 
