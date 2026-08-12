@@ -546,11 +546,11 @@ export default function AppointmentsScreen({ navigation, route }) {
     return () => clearInterval(interval);
   }, [checkUpcomingNotifications]);
 
-  // Live real-time background sync every 8 seconds so cancellations & updates reflect in live time!
+  // Live real-time background sync every 5 seconds so cancellations & updates reflect in live time!
   useEffect(() => {
     const liveSyncInterval = setInterval(() => {
       fetchAppointments(selectedSellerRef.current);
-    }, 8000);
+    }, 5000);
     return () => clearInterval(liveSyncInterval);
   }, [fetchAppointments]);
 

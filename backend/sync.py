@@ -490,7 +490,7 @@ def main():
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
             
-        time.sleep(15)
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()
