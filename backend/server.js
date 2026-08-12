@@ -67,9 +67,6 @@ const initDb = async () => {
     await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS cancellato BOOLEAN DEFAULT FALSE;`);
     await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tipo VARCHAR(100);`);
 
-    // Purge old legacy format rows without underscore
-    await db.query("DELETE FROM appointments WHERE POSITION('_' IN intorno) = 0;").catch(() => { });
-
     // Promote administration users to admin role dynamically
     await db.query(`
       UPDATE users 
