@@ -242,10 +242,11 @@ def fetch_access_data(db_path):
                     val = row[current_idx]
                     if isinstance(val, bool):
                         cancellato = val
-                    elif isinstance(val, int):
+                    elif isinstance(val, (int, float)):
                         cancellato = (val != 0)
                     elif val is not None:
-                        cancellato = str(val).strip().lower() in ('true', 'yes', 'si', '-1', '1')
+                        s = str(val).strip().lower()
+                        cancellato = s in ('true', 'yes', 'si', '-1', '1', '-1.0', '1.0', 'checked')
                     current_idx += 1
                 if tipo_col:
                     tipo = str(row[current_idx]).strip() if row[current_idx] is not None else None
@@ -456,11 +457,11 @@ def main():
     print("MS Access Backend Sync Service started.", flush=True)
     user_home = os.path.expanduser("~")
     candidate_paths = [
+        r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb",
         r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb",
         r"\\192.168.12.250\Agenda Vendita\Gestione VN2_be.accdb",
         r"Z:\Gestione VN2_be.accdb",
         r"Z:\Agenda Vendita\Gestione VN2_be.accdb",
-        r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb",
         r"C:\Users\Public\Public Documents\Agenda Vendita\Gestione VN2_be.accdb",
         os.path.join(user_home, "Documents", "Agenda Vendita", "Gestione VN2_be.accdb"),
         os.path.join(user_home, "Desktop", "Gestione VN2_be.accdb"),

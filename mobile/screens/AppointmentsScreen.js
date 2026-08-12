@@ -820,20 +820,13 @@ export default function AppointmentsScreen({ navigation, route }) {
         <FlatList
           style={s.scrollArea}
           contentContainerStyle={s.scrollContent}
-          data={visibleAppointments}
+          data={displayedAppointments}
           keyExtractor={(item, index) => item.intorno || `${item.cliente}_${item.data_ora}_${index}`}
           renderItem={renderAppointmentItem}
-          initialNumToRender={15}
-          maxToRenderPerBatch={20}
-          windowSize={5}
-          getItemLayout={(data, index) => ({
-            length: 82,
-            offset: 82 * index,
-            index,
-          })}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          removeClippedSubviews={Platform.OS === 'android'}
+          initialNumToRender={20}
+          maxToRenderPerBatch={25}
+          windowSize={10}
+          showsVerticalScrollIndicator={true}
           ListEmptyComponent={
             <View style={s.emptyState}>
               <View style={s.emptyIconCircle}>
