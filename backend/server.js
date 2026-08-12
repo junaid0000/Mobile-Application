@@ -844,10 +844,16 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
     }
 
     if (!includeHistory) {
+      // Admin: Current month (1st of month) to future
+      // Seller: Yesterday to future
+      const dateFilter = isAdminUser
+        ? "data_ora >= DATE_TRUNC('month', CURRENT_DATE)"
+        : "data_ora >= (CURRENT_DATE - INTERVAL '1 day')";
+
       if (queryParams.length > 0) {
-        queryText += " AND (data_ora >= (CURRENT_DATE - INTERVAL '1 day') OR data_ora IS NULL)";
+        queryText += ` AND (${dateFilter} OR data_ora IS NULL)`;
       } else {
-        queryText += " WHERE (data_ora >= (CURRENT_DATE - INTERVAL '1 day') OR data_ora IS NULL)";
+        queryText += ` WHERE (${dateFilter} OR data_ora IS NULL)`;
       }
     }
 
@@ -861,10 +867,29 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
       appointments: appointments
     });
 
-
   } catch (err) {
     console.error('Error fetching seller appointments:', err);
     res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// Endpoint to cancel/restore an appointment directly
+app.post('/api/appointments/toggle-cancel', async (req, res) => {
+  try {
+    const { intorno, cancellato } = req.body;
+    if (!intorno) {
+      return res.status(400).json({ error: 'Missing appointment ID (intorno)' });
+    }
+    const isCancelled = cancellato !== undefined ? cancellato : true;
+    await db.query(
+      'UPDATE appointments SET cancellato = $1, last_sync = CURRENT_TIMESTAMP WHERE intorno = $2',
+      [isCancelled, intorno]
+    );
+    console.log(`Appointment ${intorno} updated cancellato = ${isCancelled}`);
+    res.json({ success: true, intorno, cancellato: isCancelled });
+  } catch (err) {
+    console.error('Error toggling appointment cancellation:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

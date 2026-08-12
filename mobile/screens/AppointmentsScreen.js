@@ -531,7 +531,12 @@ export default function AppointmentsScreen({ navigation, route }) {
     }
   }, [token, checkUpcomingNotifications]);
 
-  // Periodic interval to check upcoming appointments every 30 seconds
+  const selectedSellerRef = useRef(selectedSeller);
+  useEffect(() => {
+    selectedSellerRef.current = selectedSeller;
+  }, [selectedSeller]);
+
+  // Periodic interval to check upcoming notifications every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       if (appointmentsRef.current && appointmentsRef.current.length > 0) {
@@ -540,6 +545,14 @@ export default function AppointmentsScreen({ navigation, route }) {
     }, 30000);
     return () => clearInterval(interval);
   }, [checkUpcomingNotifications]);
+
+  // Live real-time background sync every 8 seconds so cancellations & updates reflect in live time!
+  useEffect(() => {
+    const liveSyncInterval = setInterval(() => {
+      fetchAppointments(selectedSellerRef.current);
+    }, 8000);
+    return () => clearInterval(liveSyncInterval);
+  }, [fetchAppointments]);
 
   // Initial load
   useEffect(() => {
