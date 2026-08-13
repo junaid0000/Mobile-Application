@@ -13,7 +13,8 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
-  Switch
+  Switch,
+  ScrollView
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,21 +26,51 @@ export default function OfficeChatScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user, token } = route?.params || {};
 
+  const [chatMode, setChatMode] = useState('group'); // 'group' | 'private'
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [replyingTo, setReplyingTo] = useState(null);
+  
+  // Private chat states
+  const [staffUsers, setStaffUsers] = useState([]);
+  const [selectedRecipient, setSelectedRecipient] = useState(null);
+  const [loadingStaff, setLoadingStaff] = useState(false);
+
   const flatListRef = useRef(null);
 
   useEffect(() => {
     fetchMessages();
     fetchChatSettings();
+    fetchStaffUsers();
     const interval = setInterval(() => {
       fetchMessages();
-    }, 6000);
+    }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [chatMode, selectedRecipient]);
+
+  const fetchStaffUsers = async () => {
+    try {
+      if (!token) return;
+      setLoadingStaff(true);
+      const res = await fetch(`${API_URL}/office/users`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) {
+        setStaffUsers(data);
+        // Auto-select first staff member if none selected yet in private mode
+        if (data.length > 0 && !selectedRecipient) {
+          setSelectedRecipient(data[0]);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching staff list:', e);
+    } finally {
+      setLoadingStaff(false);
+    }
+  };
 
   const fetchChatSettings = async () => {
     try {
@@ -77,12 +108,17 @@ export default function OfficeChatScreen({ navigation, route }) {
         return;
       }
 
-      const response = await fetch(`${API_URL}/office/messages`, {
+      let url = `${API_URL}/office/messages`;
+      if (chatMode === 'private' && selectedRecipient?.id) {
+        url += `?recipient_id=${selectedRecipient.id}`;
+      }
+
+      const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
       if (response.ok) {
-        setMessages(data);
+        setMessages(Array.isArray(data) ? data : []);
         if (loading) setLoading(false);
       }
     } catch (error) {
@@ -93,8 +129,19 @@ export default function OfficeChatScreen({ navigation, route }) {
 
   const sendMessage = async () => {
     if (inputText.trim() === '') return;
+    if (chatMode === 'private' && !selectedRecipient) {
+      Alert.alert('Attenzione', 'Seleziona un membro dello staff per la chat privata');
+      return;
+    }
+
     try {
       if (!token) return;
+
+      const bodyData = {
+        message_text: inputText,
+        reply_to_id: replyingTo?.id,
+        recipient_id: chatMode === 'private' ? selectedRecipient?.id : null
+      };
 
       const response = await fetch(`${API_URL}/office/messages`, {
         method: 'POST',
@@ -102,7 +149,7 @@ export default function OfficeChatScreen({ navigation, route }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ message_text: inputText, reply_to_id: replyingTo?.id })
+        body: JSON.stringify(bodyData)
       });
       const data = await response.json();
       if (response.ok) {
@@ -158,7 +205,7 @@ export default function OfficeChatScreen({ navigation, route }) {
   };
 
   const renderMessage = ({ item }) => {
-    const isMe = user && item.name === user.name;
+    const isMe = user && (item.name === user.name || item.user_id === user.id);
     const time = new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     if (item.deleted) {
@@ -219,7 +266,9 @@ export default function OfficeChatScreen({ navigation, route }) {
             />
             <View>
               <Text style={{ color: '#FFF', fontSize: 15, fontWeight: 'bold' }}>Rossomandi</Text>
-              <Text style={styles.topBarSub}>Chat Ufficio</Text>
+              <Text style={styles.topBarSub}>
+                {chatMode === 'group' ? 'Chat Ufficio' : `Privata con ${selectedRecipient ? selectedRecipient.name : '...'}`}
+              </Text>
             </View>
           </View>
         </View>
@@ -237,6 +286,62 @@ export default function OfficeChatScreen({ navigation, route }) {
         )}
       </View>
 
+      {/* Group vs Private Tab Selector */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabBtn, chatMode === 'group' && styles.tabBtnActive]}
+          onPress={() => {
+            setChatMode('group');
+            setReplyingTo(null);
+          }}
+        >
+          <Text style={[styles.tabBtnText, chatMode === 'group' && styles.tabBtnTextActive]}>
+            👥 Chat Gruppo
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabBtn, chatMode === 'private' && styles.tabBtnActive]}
+          onPress={() => {
+            setChatMode('private');
+            setReplyingTo(null);
+            fetchStaffUsers();
+          }}
+        >
+          <Text style={[styles.tabBtnText, chatMode === 'private' && styles.tabBtnTextActive]}>
+            🔒 Chat Privata
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Staff Selection Horizontal List (Visible only in Private Chat Mode) */}
+      {chatMode === 'private' && (
+        <View style={styles.staffContainer}>
+          <Text style={styles.staffHeaderLabel}>Seleziona un membro dello staff:</Text>
+          {loadingStaff ? (
+            <ActivityIndicator size="small" color="#FF5500" style={{ marginVertical: 6 }} />
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.staffScroll}>
+              {staffUsers.map(u => {
+                const isSelected = selectedRecipient?.id === u.id;
+                const label = u.venditore_code ? `${u.name} (${u.venditore_code})` : `${u.name} (${u.role})`;
+                return (
+                  <TouchableOpacity
+                    key={u.id.toString()}
+                    style={[styles.staffPill, isSelected && styles.staffPillActive]}
+                    onPress={() => setSelectedRecipient(u)}
+                  >
+                    <Text style={[styles.staffPillText, isSelected && styles.staffPillTextActive]}>
+                      {isSelected ? '👤 ' : ''}{label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      )}
+
       {/* Keyboard-aware container — pushes input cleanly above keyboard */}
       <KeyboardAvoidingView
         style={styles.keyboardView}
@@ -244,16 +349,22 @@ export default function OfficeChatScreen({ navigation, route }) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Message List */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={item => item.id.toString()}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.listContainer}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          keyboardShouldPersistTaps="handled"
-        />
+        {chatMode === 'private' && !selectedRecipient ? (
+          <View style={styles.emptyPrivateContainer}>
+            <Text style={styles.emptyPrivateText}>👈 Seleziona un membro dello staff in alto per avviare la chat privata</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={item => item.id.toString()}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.listContainer}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            keyboardShouldPersistTaps="handled"
+          />
+        )}
 
         {/* Input Bar — stays above keyboard */}
         {(!chatEnabled && user?.role !== 'admin') ? (
@@ -276,7 +387,13 @@ export default function OfficeChatScreen({ navigation, route }) {
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
-                placeholder="Scrivi un messaggio..."
+                placeholder={
+                  chatMode === 'private'
+                    ? selectedRecipient
+                      ? `Messaggio privato a ${selectedRecipient.name}...`
+                      : 'Seleziona uno staff per scrivere...'
+                    : 'Scrivi un messaggio di gruppo...'
+                }
                 placeholderTextColor="#888"
                 value={inputText}
                 onChangeText={setInputText}
@@ -342,11 +459,89 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   topBarSub: {
-    color: '#888',
-    fontSize: 10,
+    color: '#FF8C00',
+    fontSize: 11,
     fontWeight: '600',
-    textTransform: 'uppercase',
     marginTop: 2,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#161822',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2D3A',
+    gap: 8,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#202330',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2A2D3A',
+  },
+  tabBtnActive: {
+    backgroundColor: '#FF5500',
+    borderColor: '#FF5500',
+  },
+  tabBtnText: {
+    color: '#aaa',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  tabBtnTextActive: {
+    color: '#FFF',
+  },
+  staffContainer: {
+    backgroundColor: '#1B1E2B',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2D3A',
+  },
+  staffHeaderLabel: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginLeft: 14,
+    marginBottom: 6,
+  },
+  staffScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  staffPill: {
+    backgroundColor: '#262938',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#383C50',
+  },
+  staffPillActive: {
+    backgroundColor: '#FF5500',
+    borderColor: '#FF5500',
+  },
+  staffPillText: {
+    color: '#ccc',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  staffPillTextActive: {
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  emptyPrivateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+  },
+  emptyPrivateText: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -435,12 +630,6 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: 'bold',
     fontSize: 14,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#121212',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   replyBubble: {
     backgroundColor: 'rgba(0,0,0,0.2)',

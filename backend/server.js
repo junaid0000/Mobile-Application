@@ -149,7 +149,8 @@ const initDb = async () => {
     await db.query(`
       ALTER TABLE office_messages 
       ADD COLUMN IF NOT EXISTS reply_to_id INT REFERENCES office_messages(id) ON DELETE SET NULL,
-      ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE;
+      ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS recipient_id INT REFERENCES users(id) ON DELETE CASCADE;
     `);
 
     // Seed admin account
@@ -978,18 +979,51 @@ app.post('/api/admin/settings/chat', authenticateToken, isAdmin, async (req, res
 
 // OFFICE CHAT ENDPOINTS
 
-// Get recent messages
+// GET staff list for private chat selection
+app.get('/api/office/users', authenticateToken, isOfficeStaff, async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const result = await db.query(
+      `SELECT id, name, email, role, venditore_code FROM users 
+       WHERE role IN ('admin', 'seller') AND id != $1 
+       ORDER BY role ASC, name ASC`,
+      [currentUserId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching office users:', err.message);
+    res.status(500).json({ error: 'Server error fetching staff list' });
+  }
+});
+
+// Get recent messages (supports ?recipient_id=X for 1-on-1 private chat)
 app.get('/api/office/messages', authenticateToken, isOfficeStaff, async (req, res) => {
   try {
-    const result = await db.query(`
-      SELECT m.id, m.message_text, m.created_at, m.reply_to_id, m.deleted, u.name, u.role,
+    const currentUserId = req.user.id;
+    const recipientId = req.query.recipient_id;
+
+    let queryText = `
+      SELECT m.id, m.message_text, m.created_at, m.reply_to_id, m.deleted, m.recipient_id,
+             u.name, u.role, u.id as user_id,
              (SELECT message_text FROM office_messages WHERE id = m.reply_to_id) as reply_message_text,
              (SELECT u2.name FROM office_messages rm JOIN users u2 ON rm.user_id = u2.id WHERE rm.id = m.reply_to_id) as reply_user_name
       FROM office_messages m
       JOIN users u ON m.user_id = u.id
-      ORDER BY m.created_at ASC
-      LIMIT 200
-    `);
+    `;
+    let queryParams = [];
+
+    if (recipientId && recipientId !== 'group' && recipientId !== 'null' && recipientId !== 'undefined') {
+      // Private 1-on-1 messages between current user and specified recipient
+      queryText += ` WHERE ((m.user_id = $1 AND m.recipient_id = $2) OR (m.user_id = $2 AND m.recipient_id = $1))`;
+      queryParams = [currentUserId, recipientId];
+    } else {
+      // Group chat messages (where recipient_id IS NULL)
+      queryText += ` WHERE m.recipient_id IS NULL`;
+    }
+
+    queryText += ` ORDER BY m.created_at ASC LIMIT 200`;
+
+    const result = await db.query(queryText, queryParams);
     res.json(result.rows);
   } catch (err) {
     console.error(err.message);
@@ -997,10 +1031,10 @@ app.get('/api/office/messages', authenticateToken, isOfficeStaff, async (req, re
   }
 });
 
-// Post new message
+// Post new message (supports recipient_id for private 1-on-1 chat)
 app.post('/api/office/messages', authenticateToken, isOfficeStaff, async (req, res) => {
   try {
-    const { message_text, reply_to_id } = req.body;
+    const { message_text, reply_to_id, recipient_id } = req.body;
     if (!message_text || message_text.trim() === '') {
       return res.status(400).json({ error: 'Message cannot be empty' });
     }
@@ -1014,14 +1048,17 @@ app.post('/api/office/messages', authenticateToken, isOfficeStaff, async (req, r
       }
     }
 
+    const targetRecipient = (recipient_id && recipient_id !== 'group' && recipient_id !== 'null') ? recipient_id : null;
+
     const result = await db.query(
-      'INSERT INTO office_messages (user_id, message_text, reply_to_id) VALUES ($1, $2, $3) RETURNING id, message_text, created_at, reply_to_id, deleted',
-      [req.user.id, message_text.trim(), reply_to_id || null]
+      'INSERT INTO office_messages (user_id, message_text, reply_to_id, recipient_id) VALUES ($1, $2, $3, $4) RETURNING id, message_text, created_at, reply_to_id, deleted, recipient_id',
+      [req.user.id, message_text.trim(), reply_to_id || null, targetRecipient]
     );
 
     // Fetch with user details to return the complete object
     const populated = await db.query(`
-      SELECT m.id, m.message_text, m.created_at, m.reply_to_id, m.deleted, u.name, u.role,
+      SELECT m.id, m.message_text, m.created_at, m.reply_to_id, m.deleted, m.recipient_id,
+             u.name, u.role, u.id as user_id,
              (SELECT message_text FROM office_messages WHERE id = m.reply_to_id) as reply_message_text,
              (SELECT u2.name FROM office_messages rm JOIN users u2 ON rm.user_id = u2.id WHERE rm.id = m.reply_to_id) as reply_user_name
       FROM office_messages m
