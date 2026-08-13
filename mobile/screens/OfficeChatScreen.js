@@ -14,7 +14,8 @@ import {
   StatusBar,
   Alert,
   Switch,
-  ScrollView
+  ScrollView,
+  Modal
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,11 +33,14 @@ export default function OfficeChatScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [replyingTo, setReplyingTo] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null); // Message object being edited
   
-  // Private chat states
+  // Private chat & notification states
   const [staffUsers, setStaffUsers] = useState([]);
   const [selectedRecipient, setSelectedRecipient] = useState(null);
-  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState({}); // { [sender_id]: count }
+  const [totalUnreadPrivate, setTotalUnreadPrivate] = useState(0);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   const flatListRef = useRef(null);
 
@@ -44,31 +48,51 @@ export default function OfficeChatScreen({ navigation, route }) {
     fetchMessages();
     fetchChatSettings();
     fetchStaffUsers();
+    fetchUnreadCounts();
     const interval = setInterval(() => {
       fetchMessages();
-    }, 5000);
+      fetchUnreadCounts();
+    }, 4000);
     return () => clearInterval(interval);
   }, [chatMode, selectedRecipient]);
 
   const fetchStaffUsers = async () => {
     try {
       if (!token) return;
-      setLoadingStaff(true);
       const res = await fetch(`${API_URL}/office/users`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (res.ok && Array.isArray(data)) {
         setStaffUsers(data);
-        // Auto-select first staff member if none selected yet in private mode
         if (data.length > 0 && !selectedRecipient) {
           setSelectedRecipient(data[0]);
         }
       }
     } catch (e) {
       console.error('Error fetching staff list:', e);
-    } finally {
-      setLoadingStaff(false);
+    }
+  };
+
+  const fetchUnreadCounts = async () => {
+    try {
+      if (!token) return;
+      const res = await fetch(`${API_URL}/office/unread-private`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) {
+        const counts = {};
+        let total = 0;
+        data.forEach(item => {
+          counts[item.sender_id] = parseInt(item.count, 10);
+          total += parseInt(item.count, 10);
+        });
+        setUnreadCounts(counts);
+        setTotalUnreadPrivate(total);
+      }
+    } catch (e) {
+      console.error('Error fetching unread counts:', e);
     }
   };
 
@@ -127,8 +151,35 @@ export default function OfficeChatScreen({ navigation, route }) {
     }
   };
 
-  const sendMessage = async () => {
+  const handleSendOrEdit = async () => {
     if (inputText.trim() === '') return;
+
+    if (editingMessage) {
+      // WhatsApp style message editing
+      try {
+        const response = await fetch(`${API_URL}/office/messages/${editingMessage.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ message_text: inputText.trim() })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setMessages(prev => prev.map(m => m.id === editingMessage.id ? data : m));
+          setInputText('');
+          setEditingMessage(null);
+        } else {
+          Alert.alert('Errore', data.error || 'Impossibile modificare il messaggio');
+        }
+      } catch (e) {
+        console.error('Error editing message:', e);
+      }
+      return;
+    }
+
+    // Normal message sending
     if (chatMode === 'private' && !selectedRecipient) {
       Alert.alert('Attenzione', 'Seleziona un membro dello staff per la chat privata');
       return;
@@ -138,7 +189,7 @@ export default function OfficeChatScreen({ navigation, route }) {
       if (!token) return;
 
       const bodyData = {
-        message_text: inputText,
+        message_text: inputText.trim(),
         reply_to_id: replyingTo?.id,
         recipient_id: chatMode === 'private' ? selectedRecipient?.id : null
       };
@@ -182,31 +233,52 @@ export default function OfficeChatScreen({ navigation, route }) {
   };
 
   const handleLongPress = (item) => {
-    const isMe = user && item.name === user.name;
+    const isMe = user && (item.name === user.name || item.user_id === user.id);
     const isAdmin = user?.role === 'admin';
-    const canDelete = isMe || isAdmin;
 
     const options = [
       { text: 'Annulla', style: 'cancel' },
-      { text: 'Rispondi', onPress: () => setReplyingTo(item) }
+      { text: 'Rispondi', onPress: () => { setEditingMessage(null); setReplyingTo(item); } }
     ];
 
-    if (canDelete) {
-      options.push({ text: 'Elimina', style: 'destructive', onPress: () => deleteMessage(item.id) });
+    if (isMe) {
+      options.push({
+        text: '✏️ Modifica',
+        onPress: () => {
+          setReplyingTo(null);
+          setEditingMessage(item);
+          setInputText(item.message_text);
+        }
+      });
+    }
+
+    if (isMe || isAdmin) {
+      options.push({ text: '🗑️ Elimina', style: 'destructive', onPress: () => deleteMessage(item.id) });
     }
 
     if (Platform.OS === 'web') {
-      const action = window.prompt("Digita 'R' per rispondere o 'E' per eliminare:");
-      if (action?.toUpperCase() === 'R') setReplyingTo(item);
-      if (action?.toUpperCase() === 'E' && canDelete) deleteMessage(item.id);
+      let promptText = "Opzioni:\n'R' = Rispondi";
+      if (isMe) promptText += "\n'M' = Modifica";
+      if (isMe || isAdmin) promptText += "\n'E' = Elimina";
+      
+      const action = window.prompt(promptText);
+      if (action?.toUpperCase() === 'R') { setEditingMessage(null); setReplyingTo(item); }
+      if (action?.toUpperCase() === 'M' && isMe) {
+        setReplyingTo(null);
+        setEditingMessage(item);
+        setInputText(item.message_text);
+      }
+      if (action?.toUpperCase() === 'E' && (isMe || isAdmin)) deleteMessage(item.id);
     } else {
-      Alert.alert('Opzioni', 'Cosa vuoi fare con questo messaggio?', options);
+      Alert.alert('Opzioni messaggio', 'Cosa vuoi fare?', options);
     }
   };
 
   const renderMessage = ({ item }) => {
     const isMe = user && (item.name === user.name || item.user_id === user.id);
     const time = new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const isEdited = !!item.edited_at;
+    const isPrivate = chatMode === 'private' || !!item.recipient_id;
 
     if (item.deleted) {
       return (
@@ -216,9 +288,14 @@ export default function OfficeChatScreen({ navigation, route }) {
       );
     }
 
+    // Dynamic style based on Group vs Private Chat
+    const bubbleStyle = isMe
+      ? (isPrivate ? styles.myPrivateMessage : styles.myGroupMessage)
+      : (isPrivate ? styles.theirPrivateMessage : styles.theirGroupMessage);
+
     return (
       <TouchableOpacity 
-        style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}
+        style={[styles.messageBubble, bubbleStyle]}
         onLongPress={() => handleLongPress(item)}
         activeOpacity={0.8}
       >
@@ -226,13 +303,19 @@ export default function OfficeChatScreen({ navigation, route }) {
           <Text style={styles.senderName}>{item.name} ({item.role})</Text>
         )}
         {item.reply_to_id && (
-          <View style={styles.replyBubble}>
-            <Text style={styles.replyName}>{item.reply_user_name}</Text>
+          <View style={[styles.replyBubble, isPrivate && { borderLeftColor: '#2ED573' }]}>
+            <Text style={[styles.replyName, isPrivate && { color: '#2ED573' }]}>{item.reply_user_name}</Text>
             <Text style={styles.replyText} numberOfLines={1}>{item.reply_message_text}</Text>
           </View>
         )}
         <Text style={isMe ? styles.myMessageText : styles.theirMessageText}>{item.message_text}</Text>
-        <Text style={styles.timestamp}>{time}</Text>
+        
+        <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 4, gap: 4 }}>
+          {isEdited && (
+            <Text style={{ fontSize: 10, color: '#aaa', fontStyle: 'italic' }}>(Modificato)</Text>
+          )}
+          <Text style={styles.timestamp}>{time}</Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -266,8 +349,8 @@ export default function OfficeChatScreen({ navigation, route }) {
             />
             <View>
               <Text style={{ color: '#FFF', fontSize: 15, fontWeight: 'bold' }}>Rossomandi</Text>
-              <Text style={styles.topBarSub}>
-                {chatMode === 'group' ? 'Chat Ufficio' : `Privata con ${selectedRecipient ? selectedRecipient.name : '...'}`}
+              <Text style={[styles.topBarSub, chatMode === 'private' && { color: '#2ED573' }]}>
+                {chatMode === 'group' ? 'Chat Ufficio (Gruppo)' : `Chat Privata con ${selectedRecipient ? selectedRecipient.name : '...'}`}
               </Text>
             </View>
           </View>
@@ -286,13 +369,14 @@ export default function OfficeChatScreen({ navigation, route }) {
         )}
       </View>
 
-      {/* Group vs Private Tab Selector */}
+      {/* Group vs Private Tab Selector with Notification Badge */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tabBtn, chatMode === 'group' && styles.tabBtnActive]}
           onPress={() => {
             setChatMode('group');
             setReplyingTo(null);
+            setEditingMessage(null);
           }}
         >
           <Text style={[styles.tabBtnText, chatMode === 'group' && styles.tabBtnTextActive]}>
@@ -301,48 +385,90 @@ export default function OfficeChatScreen({ navigation, route }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.tabBtn, chatMode === 'private' && styles.tabBtnActive]}
+          style={[styles.tabBtn, chatMode === 'private' && styles.tabBtnPrivateActive]}
           onPress={() => {
             setChatMode('private');
             setReplyingTo(null);
+            setEditingMessage(null);
             fetchStaffUsers();
           }}
         >
-          <Text style={[styles.tabBtnText, chatMode === 'private' && styles.tabBtnTextActive]}>
-            🔒 Chat Privata
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={[styles.tabBtnText, chatMode === 'private' && styles.tabBtnTextActive]}>
+              🔒 Chat Privata
+            </Text>
+            {totalUnreadPrivate > 0 && (
+              <View style={styles.badgeContainer}>
+                <Text style={styles.badgeText}>{totalUnreadPrivate}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
-      {/* Staff Selection Horizontal List (Visible only in Private Chat Mode) */}
+      {/* Staff Selection Dropdown (Visible in Private Chat Mode) */}
       {chatMode === 'private' && (
-        <View style={styles.staffContainer}>
-          <Text style={styles.staffHeaderLabel}>Seleziona un membro dello staff:</Text>
-          {loadingStaff ? (
-            <ActivityIndicator size="small" color="#FF5500" style={{ marginVertical: 6 }} />
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.staffScroll}>
+        <View style={styles.dropdownContainer}>
+          <Text style={styles.dropdownLabel}>Chat Privata Con:</Text>
+          <TouchableOpacity
+            style={styles.dropdownSelector}
+            onPress={() => setPickerVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dropdownSelectorText}>
+              👤 {selectedRecipient ? `${selectedRecipient.name} (${selectedRecipient.venditore_code || selectedRecipient.role})` : 'Seleziona un collega...'}
+            </Text>
+            <Text style={{ color: '#2ED573', fontSize: 14 }}>▼</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Staff Selection Modal / Dropdown Picker */}
+      <Modal
+        visible={pickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setPickerVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Seleziona Collega per Chat Privata</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
               {staffUsers.map(u => {
                 const isSelected = selectedRecipient?.id === u.id;
+                const unreadCount = unreadCounts[u.id] || 0;
                 const label = u.venditore_code ? `${u.name} (${u.venditore_code})` : `${u.name} (${u.role})`;
+                
                 return (
                   <TouchableOpacity
                     key={u.id.toString()}
-                    style={[styles.staffPill, isSelected && styles.staffPillActive]}
-                    onPress={() => setSelectedRecipient(u)}
+                    style={[styles.modalItem, isSelected && styles.modalItemActive]}
+                    onPress={() => {
+                      setSelectedRecipient(u);
+                      setPickerVisible(false);
+                    }}
                   >
-                    <Text style={[styles.staffPillText, isSelected && styles.staffPillTextActive]}>
-                      {isSelected ? '👤 ' : ''}{label}
+                    <Text style={[styles.modalItemText, isSelected && styles.modalItemTextActive]}>
+                      👤 {label}
                     </Text>
+                    {unreadCount > 0 && (
+                      <View style={styles.badgeContainer}>
+                        <Text style={styles.badgeText}>{unreadCount} nuovi</Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
-          )}
-        </View>
-      )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
-      {/* Keyboard-aware container — pushes input cleanly above keyboard */}
+      {/* Keyboard-aware container */}
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
@@ -351,7 +477,7 @@ export default function OfficeChatScreen({ navigation, route }) {
         {/* Message List */}
         {chatMode === 'private' && !selectedRecipient ? (
           <View style={styles.emptyPrivateContainer}>
-            <Text style={styles.emptyPrivateText}>👈 Seleziona un membro dello staff in alto per avviare la chat privata</Text>
+            <Text style={styles.emptyPrivateText}>👈 Seleziona un collega dal menu a tendina in alto per iniziare la chat privata</Text>
           </View>
         ) : (
           <FlatList
@@ -366,13 +492,14 @@ export default function OfficeChatScreen({ navigation, route }) {
           />
         )}
 
-        {/* Input Bar — stays above keyboard */}
+        {/* Input Bar — stays elevated above keyboard */}
         {(!chatEnabled && user?.role !== 'admin') ? (
           <View style={styles.disabledContainer}>
             <Text style={styles.disabledText}>🚫 La chat è disabilitata dall'amministratore</Text>
           </View>
         ) : (
           <View style={[styles.inputContainerWrapper, { paddingBottom: Math.max(insets.bottom + 16, Platform.OS === 'android' ? 48 : 28) }]}>
+            {/* Reply Preview */}
             {replyingTo && (
               <View style={styles.replyPreview}>
                 <View style={{ flex: 1 }}>
@@ -384,15 +511,31 @@ export default function OfficeChatScreen({ navigation, route }) {
                 </TouchableOpacity>
               </View>
             )}
+
+            {/* WhatsApp Style Edit Preview */}
+            {editingMessage && (
+              <View style={[styles.replyPreview, { borderLeftColor: '#FFC107' }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.replyNamePreview, { color: '#FFC107' }]}>✏️ Modifica messaggio</Text>
+                  <Text style={styles.replyTextPreview} numberOfLines={1}>{editingMessage.message_text}</Text>
+                </View>
+                <TouchableOpacity onPress={() => { setEditingMessage(null); setInputText(''); }}>
+                  <Text style={{ color: '#fff', fontSize: 18, padding: 5 }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
                 placeholder={
-                  chatMode === 'private'
-                    ? selectedRecipient
-                      ? `Messaggio privato a ${selectedRecipient.name}...`
-                      : 'Seleziona uno staff per scrivere...'
-                    : 'Scrivi un messaggio di gruppo...'
+                  editingMessage
+                    ? 'Modifica il tuo messaggio...'
+                    : chatMode === 'private'
+                      ? selectedRecipient
+                        ? `Messaggio privato a ${selectedRecipient.name}...`
+                        : 'Seleziona un collega per scrivere...'
+                      : 'Scrivi un messaggio di gruppo...'
                 }
                 placeholderTextColor="#888"
                 value={inputText}
@@ -400,11 +543,14 @@ export default function OfficeChatScreen({ navigation, route }) {
                 multiline
                 maxHeight={100}
                 returnKeyType="send"
-                onSubmitEditing={sendMessage}
+                onSubmitEditing={handleSendOrEdit}
                 blurOnSubmit={false}
               />
-              <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-                <Text style={styles.sendButtonText}>Invia</Text>
+              <TouchableOpacity
+                style={[styles.sendButton, chatMode === 'private' && { backgroundColor: '#2ED573' }]}
+                onPress={handleSendOrEdit}
+              >
+                <Text style={styles.sendButtonText}>{editingMessage ? 'Salva' : 'Invia'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -479,12 +625,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#202330',
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#2A2D3A',
   },
   tabBtnActive: {
     backgroundColor: '#FF5500',
     borderColor: '#FF5500',
+  },
+  tabBtnPrivateActive: {
+    backgroundColor: '#2ED573',
+    borderColor: '#2ED573',
   },
   tabBtnText: {
     color: '#aaa',
@@ -494,42 +645,93 @@ const styles = StyleSheet.create({
   tabBtnTextActive: {
     color: '#FFF',
   },
-  staffContainer: {
+  badgeContainer: {
+    backgroundColor: '#E60000',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  badgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  dropdownContainer: {
     backgroundColor: '#1B1E2B',
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#2A2D3A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  staffHeaderLabel: {
+  dropdownLabel: {
     color: '#888',
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginLeft: 14,
-    marginBottom: 6,
-  },
-  staffScroll: {
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  staffPill: {
-    backgroundColor: '#262938',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#383C50',
-  },
-  staffPillActive: {
-    backgroundColor: '#FF5500',
-    borderColor: '#FF5500',
-  },
-  staffPillText: {
-    color: '#ccc',
     fontSize: 12,
     fontWeight: '600',
   },
-  staffPillTextActive: {
+  dropdownSelector: {
+    backgroundColor: '#262938',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2ED573',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dropdownSelectorText: {
     color: '#FFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#1E202C',
+    borderRadius: 12,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#2ED573',
+  },
+  modalTitle: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  modalItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#262938',
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalItemActive: {
+    backgroundColor: 'rgba(46, 213, 115, 0.25)',
+    borderWidth: 1,
+    borderColor: '#2ED573',
+  },
+  modalItemText: {
+    color: '#ccc',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalItemTextActive: {
+    color: '#2ED573',
     fontWeight: 'bold',
   },
   emptyPrivateContainer: {
@@ -559,18 +761,34 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     marginBottom: 10,
   },
-  myMessage: {
+  // Group Chat Colors (Gold/Amber)
+  myGroupMessage: {
     alignSelf: 'flex-end',
-    backgroundColor: 'rgba(255,193,7,0.1)',
+    backgroundColor: 'rgba(255,193,7,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(255,193,7,0.3)',
+    borderColor: 'rgba(255,193,7,0.35)',
     borderBottomRightRadius: 4,
   },
-  theirMessage: {
+  theirGroupMessage: {
     alignSelf: 'flex-start',
     backgroundColor: '#1E1E1E',
     borderWidth: 1,
     borderColor: '#333',
+    borderBottomLeftRadius: 4,
+  },
+  // Private Chat Colors (Emerald Green)
+  myPrivateMessage: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(46, 213, 115, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(46, 213, 115, 0.45)',
+    borderBottomRightRadius: 4,
+  },
+  theirPrivateMessage: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#14221A',
+    borderWidth: 1,
+    borderColor: 'rgba(46, 213, 115, 0.35)',
     borderBottomLeftRadius: 4,
   },
   senderName: {
@@ -590,8 +808,6 @@ const styles = StyleSheet.create({
   timestamp: {
     fontSize: 10,
     color: 'rgba(255,255,255,0.4)',
-    alignSelf: 'flex-end',
-    marginTop: 4,
   },
   inputContainerWrapper: {
     backgroundColor: '#1E202C',
@@ -634,13 +850,13 @@ const styles = StyleSheet.create({
   replyBubble: {
     backgroundColor: 'rgba(0,0,0,0.2)',
     borderLeftWidth: 3,
-    borderLeftColor: '#FF5500',
+    borderLeftColor: '#FF8C00',
     padding: 6,
     borderRadius: 4,
     marginBottom: 6,
   },
   replyName: {
-    color: '#FF5500',
+    color: '#FF8C00',
     fontSize: 11,
     fontWeight: 'bold',
     marginBottom: 2,
@@ -659,10 +875,10 @@ const styles = StyleSheet.create({
     marginTop: 10,
     alignItems: 'center',
     borderLeftWidth: 3,
-    borderLeftColor: '#FF5500',
+    borderLeftColor: '#FF8C00',
   },
   replyNamePreview: {
-    color: '#FF5500',
+    color: '#FF8C00',
     fontSize: 12,
     fontWeight: 'bold',
     marginBottom: 2,

@@ -150,7 +150,9 @@ const initDb = async () => {
       ALTER TABLE office_messages 
       ADD COLUMN IF NOT EXISTS reply_to_id INT REFERENCES office_messages(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS recipient_id INT REFERENCES users(id) ON DELETE CASCADE;
+      ADD COLUMN IF NOT EXISTS recipient_id INT REFERENCES users(id) ON DELETE CASCADE,
+      ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;
     `);
 
     // Seed admin account
@@ -996,6 +998,24 @@ app.get('/api/office/users', authenticateToken, isOfficeStaff, async (req, res) 
   }
 });
 
+// Get unread private message counts per sender
+app.get('/api/office/unread-private', authenticateToken, isOfficeStaff, async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const result = await db.query(
+      `SELECT user_id as sender_id, COUNT(*) as count 
+       FROM office_messages 
+       WHERE recipient_id = $1 AND is_read = FALSE 
+       GROUP BY user_id`,
+      [currentUserId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching unread counts:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get recent messages (supports ?recipient_id=X for 1-on-1 private chat)
 app.get('/api/office/messages', authenticateToken, isOfficeStaff, async (req, res) => {
   try {
@@ -1003,7 +1023,7 @@ app.get('/api/office/messages', authenticateToken, isOfficeStaff, async (req, re
     const recipientId = req.query.recipient_id;
 
     let queryText = `
-      SELECT m.id, m.message_text, m.created_at, m.reply_to_id, m.deleted, m.recipient_id,
+      SELECT m.id, m.message_text, m.created_at, m.edited_at, m.reply_to_id, m.deleted, m.recipient_id,
              u.name, u.role, u.id as user_id,
              (SELECT message_text FROM office_messages WHERE id = m.reply_to_id) as reply_message_text,
              (SELECT u2.name FROM office_messages rm JOIN users u2 ON rm.user_id = u2.id WHERE rm.id = m.reply_to_id) as reply_user_name
@@ -1016,6 +1036,12 @@ app.get('/api/office/messages', authenticateToken, isOfficeStaff, async (req, re
       // Private 1-on-1 messages between current user and specified recipient
       queryText += ` WHERE ((m.user_id = $1 AND m.recipient_id = $2) OR (m.user_id = $2 AND m.recipient_id = $1))`;
       queryParams = [currentUserId, recipientId];
+
+      // Mark incoming private messages as read
+      await db.query(
+        `UPDATE office_messages SET is_read = TRUE WHERE recipient_id = $1 AND user_id = $2 AND is_read = FALSE`,
+        [currentUserId, recipientId]
+      ).catch(() => {});
     } else {
       // Group chat messages (where recipient_id IS NULL)
       queryText += ` WHERE m.recipient_id IS NULL`;
@@ -1051,13 +1077,13 @@ app.post('/api/office/messages', authenticateToken, isOfficeStaff, async (req, r
     const targetRecipient = (recipient_id && recipient_id !== 'group' && recipient_id !== 'null') ? recipient_id : null;
 
     const result = await db.query(
-      'INSERT INTO office_messages (user_id, message_text, reply_to_id, recipient_id) VALUES ($1, $2, $3, $4) RETURNING id, message_text, created_at, reply_to_id, deleted, recipient_id',
+      'INSERT INTO office_messages (user_id, message_text, reply_to_id, recipient_id) VALUES ($1, $2, $3, $4) RETURNING id, message_text, created_at, edited_at, reply_to_id, deleted, recipient_id',
       [req.user.id, message_text.trim(), reply_to_id || null, targetRecipient]
     );
 
     // Fetch with user details to return the complete object
     const populated = await db.query(`
-      SELECT m.id, m.message_text, m.created_at, m.reply_to_id, m.deleted, m.recipient_id,
+      SELECT m.id, m.message_text, m.created_at, m.edited_at, m.reply_to_id, m.deleted, m.recipient_id,
              u.name, u.role, u.id as user_id,
              (SELECT message_text FROM office_messages WHERE id = m.reply_to_id) as reply_message_text,
              (SELECT u2.name FROM office_messages rm JOIN users u2 ON rm.user_id = u2.id WHERE rm.id = m.reply_to_id) as reply_user_name
@@ -1069,6 +1095,45 @@ app.post('/api/office/messages', authenticateToken, isOfficeStaff, async (req, r
     res.status(201).json(populated.rows[0]);
   } catch (err) {
     console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// Edit Message (WhatsApp style)
+app.put('/api/office/messages/:id', authenticateToken, isOfficeStaff, async (req, res) => {
+  try {
+    const msgId = req.params.id;
+    const { message_text } = req.body;
+    if (!message_text || message_text.trim() === '') {
+      return res.status(400).json({ error: 'Message text cannot be empty' });
+    }
+
+    const msgRes = await db.query('SELECT user_id FROM office_messages WHERE id = $1', [msgId]);
+    if (msgRes.rows.length === 0) return res.status(404).json({ error: 'Message not found' });
+
+    // Only owner can edit message
+    if (msgRes.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Puoi modificare solo i tuoi messaggi' });
+    }
+
+    await db.query(
+      'UPDATE office_messages SET message_text = $1, edited_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [message_text.trim(), msgId]
+    );
+
+    const populated = await db.query(`
+      SELECT m.id, m.message_text, m.created_at, m.edited_at, m.reply_to_id, m.deleted, m.recipient_id,
+             u.name, u.role, u.id as user_id,
+             (SELECT message_text FROM office_messages WHERE id = m.reply_to_id) as reply_message_text,
+             (SELECT u2.name FROM office_messages rm JOIN users u2 ON rm.user_id = u2.id WHERE rm.id = m.reply_to_id) as reply_user_name
+      FROM office_messages m
+      JOIN users u ON m.user_id = u.id
+      WHERE m.id = $1
+    `, [msgId]);
+
+    res.json(populated.rows[0]);
+  } catch (err) {
+    console.error('Error editing message:', err.message);
     res.status(500).send('Server error');
   }
 });
