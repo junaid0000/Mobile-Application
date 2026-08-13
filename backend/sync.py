@@ -86,8 +86,6 @@ def parse_date_val(val):
 
 def copy_locked_file(src_path, dst_path):
     """Copies a file on Windows using Win32 API shared read flags, even if open and locked exclusively by MS Access."""
-    if Platform.OS if 'Platform' in globals() else False:
-        pass
     import ctypes
     from ctypes import wintypes
     try:
