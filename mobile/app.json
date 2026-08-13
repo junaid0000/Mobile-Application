@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rossomandi Client Service",
     "slug": "rossomandi-client-service",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mobile",
@@ -10,7 +10,7 @@
     "ios": {
       "icon": "./assets/images/logo.png",
       "bundleIdentifier": "com.rossomand.app",
-      "buildNumber": "21",
+      "buildNumber": "22",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Rossomandi service requires access to photo library to upload documents.",
         "NSCameraUsageDescription": "Rossomandi service requires access to camera to take photos of documents and vehicles."
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.rossomand.app",
-      "versionCode": 21,
+      "versionCode": 22,
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/images/logo.png"
