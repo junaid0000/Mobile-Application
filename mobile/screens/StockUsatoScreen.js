@@ -13,7 +13,7 @@ import {
   RefreshControl
 } from 'react-native';
 import axios from 'axios';
-import BASE_URL from '../config';
+import { BASE_URL } from '../config/apiConfig';
 
 // ─── Theme Colors ────────────────────────────────────────────────────────────
 const T = {
