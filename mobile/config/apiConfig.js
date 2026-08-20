@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 
 // Production server domain with SSL (HTTPS) for store builds
 // Replace PROD_BACKEND_URL with your live server domain when deployed
-const PROD_BACKEND_URL = 'https://api.rossomandi.com'; 
+const PROD_BACKEND_URL = 'https://rossomandi-backend.onrender.com';
 
 let host = '192.168.12.152';
 
@@ -16,10 +16,19 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.h
   host = Constants.manifest2.extra.expoGo.debuggerHost.split(':')[0];
 }
 
-// Automatically uses local IP during development (__DEV__ = true)
-// and production server domain when building for App Store / Play Store
-export const BASE_URL = __DEV__ 
-  ? `http://${host}:5000` 
-  : PROD_BACKEND_URL;
+import axios from 'axios';
+
+// Always connect mobile app to live production server (Render)
+export const BASE_URL = PROD_BACKEND_URL;
+
+// Configure default axios headers
+axios.defaults.headers.common['bypass-tunnel-reminder'] = 'true';
+axios.defaults.headers.common['Bypass-Tunnel-Reminder'] = 'true';
+axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
+
+
+
+
+
 
 

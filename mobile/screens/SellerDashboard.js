@@ -207,7 +207,7 @@ export default function SellerDashboard({ navigation, route }) {
 
       {/* ── Footer pinned at bottom ──────────────────────────────────── */}
       <View style={styles.footerContainer}>
-        <Text style={styles.footerText}>Rossomandi Automotive © 2026 • v1.0.4</Text>
+        <Text style={styles.footerText}>Rossomandi Automotive © 2026 • v1.0.3 (Build 22)</Text>
       </View>
 
       {/* ── Left-Side Slide-Out Drawer Modal ──────────────────────────── */}

@@ -393,6 +393,17 @@ export default function AppointmentsScreen({ navigation, route }) {
   const notified15mRef = useRef(new Set());
   const notified5mRef = useRef(new Set());
 
+  const parseSafeDate = (dateStr) => {
+    if (!dateStr) return null;
+    if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+    let str = String(dateStr).trim();
+    if (str.includes(' ') && !str.includes('T')) {
+      str = str.replace(' ', 'T');
+    }
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
   const triggerRingNotification = async (title, body) => {
     try {
       await Notifications.scheduleNotificationAsync({
@@ -417,10 +428,21 @@ export default function AppointmentsScreen({ navigation, route }) {
   const checkUpcomingNotifications = useCallback((list) => {
     if (!list || list.length === 0 || !notifications) return;
     const now = new Date();
-    list.forEach(appt => {
+    // Format today date string "YYYY-MM-DD"
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayPrefix = `${year}-${month}-${day}`;
+
+    // Filter to only today's appointments for fast evaluation
+    const todayList = list.filter(a => a && a.data_ora && String(a.data_ora).startsWith(todayPrefix));
+    if (todayList.length === 0) return;
+
+    todayList.forEach(appt => {
       if (!appt.data_ora || appt.cancellato) return;
 
-      const apptTime = new Date(appt.data_ora);
+      const apptTime = parseSafeDate(appt.data_ora);
+      if (!apptTime) return;
       const diffMs = apptTime.getTime() - now.getTime();
       const diffMinutes = Math.round(diffMs / (1000 * 60));
 
@@ -469,6 +491,11 @@ export default function AppointmentsScreen({ navigation, route }) {
     });
   }, [notifications]);
 
+  const appointmentsRef = useRef(appointments);
+  useEffect(() => {
+    appointmentsRef.current = appointments;
+  }, [appointments]);
+
   // Fetch sellers list for the dropdown
   const fetchSellersList = useCallback(async () => {
     try {
@@ -495,40 +522,51 @@ export default function AppointmentsScreen({ navigation, route }) {
       setAppointments(list);
       checkUpcomingNotifications(list);
 
-      if (!sellerCode && res.data.seller_code) {
-        setSellerCode(res.data.seller_code);
+      if (res.data.seller_code) {
+        setSellerCode(prev => prev || res.data.seller_code);
       }
     } catch (err) {
       console.error('Error fetching appointments:', err);
       setAppointments([]);
     }
-  }, [token, sellerCode, checkUpcomingNotifications]);
+  }, [token, checkUpcomingNotifications]);
 
-  // Periodic interval to check upcoming appointments every 30 seconds
+  const selectedSellerRef = useRef(selectedSeller);
+  useEffect(() => {
+    selectedSellerRef.current = selectedSeller;
+  }, [selectedSeller]);
+
+  // Periodic interval to check upcoming notifications every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      checkUpcomingNotifications(appointments);
+      if (appointmentsRef.current && appointmentsRef.current.length > 0) {
+        checkUpcomingNotifications(appointmentsRef.current);
+      }
     }, 30000);
     return () => clearInterval(interval);
-  }, [appointments, checkUpcomingNotifications]);
+  }, [checkUpcomingNotifications]);
+
+  // Live real-time background sync every 5 seconds so cancellations & updates reflect in live time!
+  useEffect(() => {
+    const liveSyncInterval = setInterval(() => {
+      fetchAppointments(selectedSellerRef.current);
+    }, 5000);
+    return () => clearInterval(liveSyncInterval);
+  }, [fetchAppointments]);
 
   // Initial load
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      if (isAdminUser) {
-        await fetchSellersList();
-        setSelectedSeller('__ALL__');
-        await fetchAppointments('__ALL__');
-      } else {
-        // Seller: fetch default (server filters by their own code)
-        await fetchAppointments(null);
-        setSelectedSeller(null); // will be set once we get seller_code back
-      }
-      setLoading(false);
+      await fetchSellersList();
+      const initialSellerFilter = (!isAdminUser && (user?.venditore_code || sellerCode)) ? (user?.venditore_code || sellerCode) : '__ALL__';
+      setSelectedSeller(initialSellerFilter);
+      await fetchAppointments(initialSellerFilter);
+      setTimeout(() => setLoading(false), 50);
     };
     init();
   }, []);
+
 
   // When sellerCode is set from the first fetch, update selectedSeller for sellers
   useEffect(() => {
@@ -540,35 +578,63 @@ export default function AppointmentsScreen({ navigation, route }) {
   // When dropdown selection changes, re-fetch
   const handleSelectSeller = async (code) => {
     setSelectedSeller(code);
+    setRenderLimit(30);
     setLoading(true);
     await fetchAppointments(code);
-    setLoading(false);
+    setTimeout(() => setLoading(false), 50);
   };
 
   // Pull-to-refresh
   const onRefresh = async () => {
     setRefreshing(true);
+    setRenderLimit(30);
     await fetchSellersList();
     await fetchAppointments(selectedSeller);
     setRefreshing(false);
   };
 
+  const MONTHS_IT = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
+
   const getDateString = (dateStr) => {
     if (!dateStr) return 'SENZA';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }).toUpperCase();
+    const str = String(dateStr).trim();
+    if (str.length >= 10) {
+      const parts = str.split('T')[0].split(' ')[0].split('-');
+      if (parts.length === 3) {
+        const monthIdx = parseInt(parts[1], 10) - 1;
+        const day = parts[2];
+        if (monthIdx >= 0 && monthIdx < 12) {
+          return `${day} ${MONTHS_IT[monthIdx]}`;
+        }
+      }
+    }
+    return 'SENZA';
   };
 
   const getYearString = (dateStr) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.getFullYear().toString();
+    const str = String(dateStr).trim();
+    if (str.length >= 4) {
+      return str.substring(0, 4);
+    }
+    return '';
   };
 
   const formatTime = (dateStr) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const str = String(dateStr).trim();
+    if (str.includes('T')) {
+      const timePart = str.split('T')[1];
+      if (timePart && timePart.length >= 5) {
+        return timePart.substring(0, 5);
+      }
+    } else if (str.includes(' ')) {
+      const timePart = str.split(' ')[1];
+      if (timePart && timePart.length >= 5) {
+        return timePart.substring(0, 5);
+      }
+    }
+    return '';
   };
 
   // Get yesterday's date at midnight for comparison
@@ -579,11 +645,81 @@ export default function AppointmentsScreen({ navigation, route }) {
     return d;
   };
 
+  const renderAppointmentItem = useCallback(({ item: appt, index }) => (
+    <View style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}>
+      {/* Left: Date & Year Block */}
+      <View style={s.dateBlock}>
+        <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
+        <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
+      </View>
+
+      {/* Middle: Details Row */}
+      <View style={s.mainBlock}>
+        <View style={s.timeRow}>
+          <Text style={s.timeText}>
+            🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
+          </Text>
+        </View>
+        <Text
+          style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
+          numberOfLines={1}
+        >
+          {appt.cliente || 'Cliente Sconosciuto'}
+        </Text>
+        <Text style={s.placeText} numberOfLines={1}>
+          📍 {appt.luogo || 'Sede non specificata'}
+        </Text>
+        {appt.note ? (
+          expandedNotes[appt.intorno] ? (
+            <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+              <Text style={s.noteText}>📝 {appt.note}</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
+              <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
+            </TouchableOpacity>
+          )
+        ) : null}
+      </View>
+
+      {/* Right: Badge Meta */}
+      <View style={s.rightBlock}>
+        <View style={s.codeBadgeSmall}>
+          <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
+        </View>
+        {appt.venditore && (
+          <View style={s.sellerBadgeSmall}>
+            <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
+          </View>
+        )}
+        {appt.tipo ? (
+          <View style={[
+            s.tipoBadge,
+            appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
+          ]}>
+            <Text style={[
+              s.tipoText,
+              appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
+            ]}>
+              {appt.tipo?.toLowerCase().includes('telefon') ? `☎️ ${appt.tipo}` : appt.tipo}
+            </Text>
+          </View>
+        ) : null}
+        {appt.cancellato && (
+          <View style={s.cancelledBadge}>
+            <Text style={s.cancelledText}>✕ Annullato</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  ), [expandedNotes]);
+
+  const [renderLimit, setRenderLimit] = useState(30);
+
   const displayedAppointments = useMemo(() => {
-    const yesterday = getYesterdayDate();
     const map = new Map();
     appointments.forEach(a => {
-      if (a.data_ora && new Date(a.data_ora) >= yesterday) {
+      if (a) {
         const key = a.intorno || `${a.cliente}_${a.data_ora}`;
         if (!map.has(key)) {
           map.set(key, a);
@@ -592,6 +728,17 @@ export default function AppointmentsScreen({ navigation, route }) {
     });
     return Array.from(map.values());
   }, [appointments]);
+
+  const visibleAppointments = useMemo(() => {
+    return displayedAppointments.slice(0, renderLimit);
+  }, [displayedAppointments, renderLimit]);
+
+  const handleEndReached = () => {
+    if (renderLimit < displayedAppointments.length) {
+      setRenderLimit(prev => Math.min(prev + 40, displayedAppointments.length));
+    }
+  };
+
 
   return (
     <View style={s.container}>
@@ -634,8 +781,10 @@ export default function AppointmentsScreen({ navigation, route }) {
               resizeMode="contain"
             />
             <View>
-              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: 'bold' }}>Rossomandi</Text>
-              <Text style={s.topBarSub}>Appuntamenti</Text>
+              <Text style={s.headerTitle}>Appuntamenti</Text>
+              <Text style={s.headerSubTitle}>
+                {sellerCode ? `Codice: ${sellerCode}` : 'Tutti I Venditori'}
+              </Text>
             </View>
           </View>
         </View>
@@ -649,125 +798,56 @@ export default function AppointmentsScreen({ navigation, route }) {
         </View>
       </View>
 
-      {/* ── Main Content ────────────────────────────────────────── */}
-      <ScrollView
-        style={s.scrollArea}
-        contentContainerStyle={s.scrollContent}
-        showsVerticalScrollIndicator={true}
-        persistentScrollbar={true}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={T.red}
-            colors={[T.red]}
-          />
-        }
-      >
-        {/* Dropdown Filter for Admins */}
-        {isAdminUser && sellersList.length > 0 && (
+      {/* ── Seller Filter Dropdown Bar ─────────────────────────── */}
+      {isAdminUser && sellersList.length > 0 && !loading && (
+        <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
           <SellerDropdown
             sellers={sellersList}
             selected={selectedSeller}
             onSelect={handleSelectSeller}
             userSellerCode={sellerCode}
           />
-        )}
+        </View>
+      )}
 
-        {loading ? (
-          <View style={s.loadingBox}>
-            <ActivityIndicator color={T.red} size="large" />
-            <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
-          </View>
-        ) : displayedAppointments.length === 0 ? (
-          /* Empty State */
-          <View style={s.emptyState}>
-            <View style={s.emptyIconCircle}>
-              <Text style={s.emptyIcon}>📅</Text>
+      {/* ── Main Content ────────────────────────────────────────── */}
+      {loading ? (
+        <View style={s.loadingBox}>
+          <ActivityIndicator color={T.red} size="large" />
+          <Text style={s.loadingText}>Caricamento appuntamenti...</Text>
+        </View>
+      ) : (
+        <FlatList
+          style={s.scrollArea}
+          contentContainerStyle={s.scrollContent}
+          data={displayedAppointments}
+          keyExtractor={(item, index) => item.intorno || `${item.cliente}_${item.data_ora}_${index}`}
+          renderItem={renderAppointmentItem}
+          initialNumToRender={20}
+          maxToRenderPerBatch={25}
+          windowSize={10}
+          showsVerticalScrollIndicator={true}
+          ListEmptyComponent={
+            <View style={s.emptyState}>
+              <View style={s.emptyIconCircle}>
+                <Text style={s.emptyIcon}>📅</Text>
+              </View>
+              <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
+              <Text style={s.emptySubtitle}>
+                Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
+              </Text>
             </View>
-            <Text style={s.emptyTitle}>Nessun Appuntamento</Text>
-            <Text style={s.emptySubtitle}>
-              Non ci sono appuntamenti da ieri in poi per il venditore selezionato.
-            </Text>
-          </View>
-        ) : (
-          /* Line by Line Appointment list */
-          displayedAppointments.map((appt, idx) => (
-            <View
-              key={`${appt.intorno}-${idx}`}
-              style={[s.lineItem, appt.cancellato && s.lineItemCancelled]}
-            >
-              {/* Left: Date & Year Block */}
-              <View style={s.dateBlock}>
-                <Text style={s.dateText}>{getDateString(appt.data_ora)}</Text>
-                <Text style={s.yearText}>{getYearString(appt.data_ora)}</Text>
-              </View>
-
-              {/* Middle: Details Row */}
-              <View style={s.mainBlock}>
-                <View style={s.timeRow}>
-                  <Text style={s.timeText}>
-                    🕐 {formatTime(appt.data_ora) || 'Orario non spec.'}
-                  </Text>
-                </View>
-                <Text
-                  style={[s.clientText, appt.cancellato && s.clientTextCancelled]}
-                  numberOfLines={1}
-                >
-                  {appt.cliente || 'Cliente Sconosciuto'}
-                </Text>
-                <Text style={s.placeText} numberOfLines={1}>
-                  📍 {appt.luogo || 'Sede non specificata'}
-                </Text>
-                {appt.note ? (
-                  expandedNotes[appt.intorno] ? (
-                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
-                      <Text style={s.noteText}>📝 {appt.note}</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity onPress={() => toggleNote(appt.intorno)}>
-                      <Text style={s.seeNoteText}>👁️ Visualizza nota</Text>
-                    </TouchableOpacity>
-                  )
-                ) : null}
-              </View>
-
-              {/* Right: Badge Meta */}
-              <View style={s.rightBlock}>
-                <View style={s.codeBadgeSmall}>
-                  <Text style={s.codeTextSmall}>#{appt.intorno ? appt.intorno.split('_')[0] : ''}</Text>
-                </View>
-                {appt.venditore && (
-                  <View style={s.sellerBadgeSmall}>
-                    <Text style={s.sellerTextSmall}>{appt.venditore}</Text>
-                  </View>
-                )}
-                {appt.tipo ? (
-                  <View style={[
-                    s.tipoBadge,
-                    appt.tipo?.toLowerCase().includes('telefon') && s.tipoBadgeGreen,
-                  ]}>
-                    <Text style={[
-                      s.tipoText,
-                      appt.tipo?.toLowerCase().includes('telefon') && s.tipoTextGreen,
-                    ]}>
-                      {appt.tipo?.toLowerCase().includes('telefon') ? `☎️ ${appt.tipo}` : appt.tipo}
-                    </Text>
-                  </View>
-                ) : null}
-                {appt.cancellato && (
-                  <View style={s.cancelledBadge}>
-                    <Text style={s.cancelledText}>✕ Annullato</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          ))
-        )}
-
-        {/* Bottom Spacer */}
-        <View style={{ height: 30 }} />
-      </ScrollView>
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={T.red}
+              colors={[T.red]}
+            />
+          }
+        />
+      )}
 
       {/* ── Left-Side Slide-Out Drawer Modal ──────────────────────────── */}
       <Modal
@@ -1020,6 +1100,7 @@ const s = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 100,
   },
 
   // Loading
@@ -1110,13 +1191,13 @@ const s = StyleSheet.create({
   },
   dateText: {
     color: T.yellow,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
     textAlign: 'center',
   },
   yearText: {
     color: T.textMuted,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
     marginTop: 2,
   },
@@ -1127,12 +1208,19 @@ const s = StyleSheet.create({
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 3,
+    marginBottom: 4,
+    backgroundColor: 'rgba(255,193,7,0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(255,193,7,0.25)',
   },
   timeText: {
-    color: T.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
+    color: '#FFC107',
+    fontSize: 16,
+    fontWeight: '800',
   },
   clientText: {
     color: T.textPrimary,

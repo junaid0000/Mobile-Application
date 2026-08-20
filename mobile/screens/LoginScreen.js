@@ -27,13 +27,18 @@ export default function LoginScreen({ navigation }) {
   const API_URL = `${BASE_URL}/api/auth/login`;
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    const cleanEmail = email.toLowerCase().trim();
+    if (!cleanEmail || !password) {
       Alert.alert('Error', 'Please fill all fields');
       return;
     }
     setLoading(true);
     try {
-      const response = await axios.post(API_URL, { email, password });
+      const response = await axios.post(
+        API_URL,
+        { email: cleanEmail, password },
+        { timeout: 35000 }
+      );
       const { user, token } = response.data;
 
       if (user.role === 'admin') {
@@ -42,7 +47,18 @@ export default function LoginScreen({ navigation }) {
         navigation.navigate('SellerDashboard', { user, token });
       }
     } catch (error) {
-      Alert.alert('Login Failed', error.response?.data?.error || 'Network error');
+      console.error('Login Error:', error);
+      let message = 'Impossibile connettersi al server. Verifica la tua connessione internet.';
+      if (error.response) {
+        message = typeof error.response.data === 'string'
+          ? error.response.data
+          : (error.response.data?.error || `Errore del server (${error.response.status})`);
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        message = 'Il server sta avviando il servizio. Attendi qualche secondo e riprova.';
+      } else if (error.message) {
+        message = error.message;
+      }
+      Alert.alert('Login Non Riuscito', message);
     } finally {
       setLoading(false);
     }

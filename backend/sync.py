@@ -7,6 +7,8 @@ import os
 import shutil
 import socket
 import threading
+import urllib.request
+import json
 
 # --- CONFIGURATION ---
 # Network path to the live backend database on the server
@@ -84,8 +86,6 @@ def parse_date_val(val):
 
 def copy_locked_file(src_path, dst_path):
     """Copies a file on Windows using Win32 API shared read flags, even if open and locked exclusively by MS Access."""
-    if Platform.OS if 'Platform' in globals() else False:
-        pass
     import ctypes
     from ctypes import wintypes
     try:
@@ -240,10 +240,11 @@ def fetch_access_data(db_path):
                     val = row[current_idx]
                     if isinstance(val, bool):
                         cancellato = val
-                    elif isinstance(val, int):
+                    elif isinstance(val, (int, float)):
                         cancellato = (val != 0)
                     elif val is not None:
-                        cancellato = str(val).strip().lower() in ('true', 'yes', 'si', '-1', '1')
+                        s = str(val).strip().lower()
+                        cancellato = s in ('true', 'yes', 'si', '-1', '1', '-1.0', '1.0', 'checked')
                     current_idx += 1
                 if tipo_col:
                     tipo = str(row[current_idx]).strip() if row[current_idx] is not None else None
@@ -387,12 +388,6 @@ def upsert_to_postgresql(data):
     
     pg_conn = None
     try:
-        pg_conn = psycopg2.connect(PG_CONN_STR)
-        cursor = pg_conn.cursor()
-        
-        # Purge legacy format rows without underscore on every sync loop pass
-        cursor.execute("DELETE FROM appointments WHERE POSITION('_' IN intorno) = 0;")
-        
         upsert_query = """
             INSERT INTO public.appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo)
             VALUES %s
@@ -407,10 +402,47 @@ def upsert_to_postgresql(data):
                 tipo = EXCLUDED.tipo,
                 last_sync = CURRENT_TIMESTAMP;
         """
+
+        pg_conn = psycopg2.connect(PG_CONN_STR)
+        cursor = pg_conn.cursor()
         
         execute_values(cursor, upsert_query, deduplicated_data)
         pg_conn.commit()
-        print(f"Successfully synced {len(deduplicated_data)} unique records to PostgreSQL.")
+        print(f"[OK] Successfully synced {len(deduplicated_data)} unique records to local PostgreSQL.")
+
+        # Push synced records directly to Render live cloud database
+        try:
+            import json
+            payload_appts = []
+            for item in deduplicated_data:
+                # item: (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo)
+                d_ora = item[3].isoformat() if item[3] else None
+                payload_appts.append({
+                    "intorno": str(item[0]),
+                    "cliente": item[1],
+                    "venditore": item[2],
+                    "data_ora": d_ora,
+                    "luogo": item[4],
+                    "note": item[5],
+                    "cancellato": bool(item[6]) if item[6] is not None else False,
+                    "tipo": item[7]
+                })
+
+            req_data = json.dumps({"appointments": payload_appts}).encode('utf-8')
+            render_req = urllib.request.Request(
+                'https://rossomandi-backend.onrender.com/api/sync/push-appointments',
+                data=req_data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-sync-key': 'rossomandi_secret_sync_2026'
+                },
+                method='POST'
+            )
+            with urllib.request.urlopen(render_req, timeout=30) as resp:
+                print(f"[LIVE RENDER CLOUD SYNC] Successfully synced {len(payload_appts)} records directly to Render Cloud DB! (HTTP {resp.status})", flush=True)
+        except Exception as render_err:
+            print(f"[LIVE RENDER CLOUD SYNC WARNING] Cloud sync notice: {render_err}", flush=True)
+
     except Exception as e:
         print(f"Error writing to PostgreSQL: {e}")
         if pg_conn:
@@ -423,26 +455,16 @@ def main():
     print("MS Access Backend Sync Service started.", flush=True)
     user_home = os.path.expanduser("~")
     candidate_paths = [
+        r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb",
         r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb",
         r"\\192.168.12.250\Agenda Vendita\Gestione VN2_be.accdb",
         r"Z:\Gestione VN2_be.accdb",
         r"Z:\Agenda Vendita\Gestione VN2_be.accdb",
-        r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb",
         r"C:\Users\Public\Public Documents\Agenda Vendita\Gestione VN2_be.accdb",
         os.path.join(user_home, "Documents", "Agenda Vendita", "Gestione VN2_be.accdb"),
         os.path.join(user_home, "Desktop", "Gestione VN2_be.accdb"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_sync.accdb"),
     ]
-    
-    # Clean up old legacy rows in PostgreSQL that don't use the concatenated unique key format
-    try:
-        pg_c = psycopg2.connect(PG_CONN_STR)
-        with pg_c.cursor() as cur:
-            cur.execute("DELETE FROM appointments WHERE POSITION('_' IN intorno) = 0;")
-            pg_c.commit()
-        pg_c.close()
-    except Exception:
-        pass
 
     while True:
         try:
@@ -463,12 +485,11 @@ def main():
                 print("[Sync] Access DB not found. Checked paths:", flush=True)
                 for p in candidate_paths:
                     print(f"  - {p}", flush=True)
-                print("[Sync] Waiting 7 seconds...", flush=True)
                 
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
             
-        time.sleep(7)
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()
