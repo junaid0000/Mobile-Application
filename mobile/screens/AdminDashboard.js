@@ -305,7 +305,19 @@ export default function AdminDashboard({ navigation, route }) {
               </View>
             </TouchableOpacity>
 
-            {/* Button 2: Chat Ufficio */}
+            {/* Button 2: Stock Usato */}
+            <TouchableOpacity
+              style={[styles.clay3DButton, { backgroundColor: '#1E293B', borderColor: '#2ED573', borderWidth: 1.5 }]}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('StockUsato', { user, token })}
+            >
+              <View style={styles.clayButtonInner}>
+                <Text style={styles.clayButtonEmoji}>🚗</Text>
+                <Text style={[styles.clayButtonText, { color: '#2ED573' }]}>Stock Usato</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Button 3: Chat Ufficio */}
             <TouchableOpacity
               style={[styles.clay3DButton, styles.clay3DButtonDarker]}
               activeOpacity={0.85}

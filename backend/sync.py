@@ -451,6 +451,118 @@ def upsert_to_postgresql(data):
         if pg_conn:
             pg_conn.close()
 
+def fetch_stock_usato_data(db_path):
+    """Connects to Access DB and fetches all rows from StockUsato table safely."""
+    temp_path = None
+    is_temp = False
+    conn = None
+    cursor = None
+    try:
+        if os.path.exists(db_path):
+            temp_path = os.path.join(tempfile.gettempdir(), f"temp_stock_{uuid.uuid4().hex}.accdb")
+            shutil.copy2(db_path, temp_path)
+            read_path = temp_path
+            is_temp = True
+        else:
+            read_path = db_path
+
+        conn_str = get_odbc_connection_string(read_path)
+        conn = pyodbc.connect(conn_str, timeout=15)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("SELECT [Indice], [Targa], [Marca], [Versione], [data 1° imn], [KM], [Colore], [Carburante], [Cambio], [prezzo stimato], [Prezzo Aut], [Prezzo di v], [Pronta] FROM StockUsato")
+            rows = cursor.fetchall()
+        except Exception as table_err:
+            print(f"[StockUsato] Table query notice: {table_err}", flush=True)
+            return []
+
+        data = []
+        for row in rows:
+            try:
+                indice = int(row[0]) if row[0] is not None else None
+                if not indice:
+                    continue
+                targa = str(row[1]).strip() if row[1] is not None else ""
+                marca = str(row[2]).strip() if row[2] is not None else ""
+                versione = str(row[3]).strip() if row[3] is not None else ""
+                
+                dt_val = parse_date_val(row[4])
+                
+                km_val = 0
+                if row[5] is not None:
+                    try:
+                        km_val = int(float(str(row[5]).replace('.', '').replace(',', '.').strip()))
+                    except ValueError:
+                        km_val = 0
+                        
+                colore = str(row[6]).strip() if row[6] is not None else ""
+                carburante = str(row[7]).strip() if row[7] is not None else ""
+                cambio = str(row[8]).strip() if row[8] is not None else ""
+
+                def parse_price(val):
+                    if val is None: return 0.0
+                    try:
+                        clean = str(val).replace('€', '').replace(' ', '').replace('.', '').replace(',', '.').strip()
+                        return float(clean)
+                    except ValueError:
+                        return 0.0
+
+                p_stimato = parse_price(row[9])
+                p_aut = parse_price(row[10])
+                p_vendita = parse_price(row[11])
+                pronta = bool(row[12]) if row[12] is not None else False
+
+                data.append({
+                    "indice": indice,
+                    "targa": targa,
+                    "marca": marca,
+                    "versione": versione,
+                    "data_immatricolazione": dt_val.isoformat() if dt_val else None,
+                    "km": km_val,
+                    "colore": colore,
+                    "carburante": carburante,
+                    "cambio": cambio,
+                    "prezzo_stimato": p_stimato,
+                    "prezzo_aut": p_aut,
+                    "prezzo_vendita": p_vendita,
+                    "pronta": pronta
+                })
+            except Exception:
+                continue
+
+        return data
+    except Exception as e:
+        print(f"[StockUsato] Fetch error: {e}", flush=True)
+        return []
+    finally:
+        if cursor:
+            try: cursor.close()
+            except Exception: pass
+        if conn:
+            try: conn.close()
+            except Exception: pass
+        if is_temp and temp_path and os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+
+def push_stock_usato_to_render(items):
+    """Pushes stock_usato items directly to live Render cloud server."""
+    if not items:
+        return
+    try:
+        render_url = "https://rossomandi-backend.onrender.com/api/sync/push-stock-usato"
+        req_data = json.dumps({"items": items}).encode("utf-8")
+        req = urllib.request.Request(
+            render_url,
+            data=req_data,
+            headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            print(f"[StockUsato Live Sync] Successfully pushed {len(items)} vehicles to Render Cloud DB! (HTTP {resp.status})", flush=True)
+    except Exception as err:
+        print(f"[StockUsato Live Sync Notice] {err}", flush=True)
+
 def main():
     print("MS Access Backend Sync Service started.", flush=True)
     user_home = os.path.expanduser("~")
@@ -469,23 +581,25 @@ def main():
     while True:
         try:
             data = None
+            stock_data = None
             for path in candidate_paths:
                 if os.path.exists(path):
                     is_server = "192.168.12.250" in path or path.startswith("Z:")
                     tag = "LIVE SERVER" if is_server else "LOCAL FALLBACK"
                     print(f"[{tag}] Connected to Access DB at: {path}", flush=True)
                     data = fetch_access_data(path)
-                    if data:
+                    stock_data = fetch_stock_usato_data(path)
+                    if data or stock_data:
                         break
                                 
             if data:
                 print(f"[Sync] Read {len(data)} records from Access DB. Syncing to PostgreSQL...", flush=True)
                 upsert_to_postgresql(data)
-            else:
-                print("[Sync] Access DB not found. Checked paths:", flush=True)
-                for p in candidate_paths:
-                    print(f"  - {p}", flush=True)
-                
+            
+            if stock_data:
+                print(f"[StockUsato] Read {len(stock_data)} vehicles from Access DB. Syncing to Cloud...", flush=True)
+                push_stock_usato_to_render(stock_data)
+
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
             

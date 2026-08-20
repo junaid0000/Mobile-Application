@@ -145,14 +145,24 @@ const initDb = async () => {
       ON CONFLICT (key) DO NOTHING;
     `);
 
-    // Alter office_messages to add missing columns safely
+    // Create stock_usato table
     await db.query(`
-      ALTER TABLE office_messages 
-      ADD COLUMN IF NOT EXISTS reply_to_id INT REFERENCES office_messages(id) ON DELETE SET NULL,
-      ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS recipient_id INT REFERENCES users(id) ON DELETE CASCADE,
-      ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
-      ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;
+      CREATE TABLE IF NOT EXISTS stock_usato (
+        indice INT PRIMARY KEY,
+        targa VARCHAR(50),
+        marca VARCHAR(100),
+        versione VARCHAR(255),
+        data_immatricolazione TIMESTAMP WITH TIME ZONE,
+        km INT,
+        colore VARCHAR(100),
+        carburante VARCHAR(100),
+        cambio VARCHAR(100),
+        prezzo_stimato NUMERIC(12,2),
+        prezzo_aut NUMERIC(12,2),
+        prezzo_vendita NUMERIC(12,2),
+        pronta BOOLEAN DEFAULT FALSE,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // Seed admin account
@@ -976,6 +986,63 @@ app.post('/api/admin/settings/chat', authenticateToken, isAdmin, async (req, res
     res.json({ success: true, chat_enabled });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET Stock Usato Vehicle Inventory
+app.get('/api/stock-usato', authenticateToken, isOfficeStaff, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT indice, targa, marca, versione, data_immatricolazione, km, colore, carburante, cambio, 
+              prezzo_stimato, prezzo_aut, prezzo_vendita, pronta, updated_at
+       FROM stock_usato 
+       ORDER BY pronta DESC, marca ASC, versione ASC`
+    );
+    res.json({ stock: result.rows });
+  } catch (err) {
+    console.error('Error fetching stock_usato:', err.message);
+    res.status(500).json({ error: 'Server error fetching vehicle inventory' });
+  }
+});
+
+// Push Stock Usato items from sync.py
+app.post('/api/sync/push-stock-usato', async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.json({ message: 'No items to sync' });
+    }
+
+    for (const item of items) {
+      await db.query(
+        `INSERT INTO stock_usato (indice, targa, marca, versione, data_immatricolazione, km, colore, carburante, cambio, prezzo_stimato, prezzo_aut, prezzo_vendita, pronta, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+         ON CONFLICT (indice)
+         DO UPDATE SET
+           targa = EXCLUDED.targa,
+           marca = EXCLUDED.marca,
+           versione = EXCLUDED.versione,
+           data_immatricolazione = EXCLUDED.data_immatricolazione,
+           km = EXCLUDED.km,
+           colore = EXCLUDED.colore,
+           carburante = EXCLUDED.carburante,
+           cambio = EXCLUDED.cambio,
+           prezzo_stimato = EXCLUDED.prezzo_stimato,
+           prezzo_aut = EXCLUDED.prezzo_aut,
+           prezzo_vendita = EXCLUDED.prezzo_vendita,
+           pronta = EXCLUDED.pronta,
+           updated_at = CURRENT_TIMESTAMP`,
+        [
+          item.indice, item.targa, item.marca, item.versione, item.data_immatricolazione,
+          item.km, item.colore, item.carburante, item.cambio, item.prezzo_stimato,
+          item.prezzo_aut, item.prezzo_vendita, item.pronta
+        ]
+      );
+    }
+    res.json({ success: true, count: items.length });
+  } catch (err) {
+    console.error('Error pushing stock_usato:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

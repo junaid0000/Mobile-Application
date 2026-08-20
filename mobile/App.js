@@ -10,6 +10,7 @@ import AdminDashboard from './screens/AdminDashboard';
 import SellerDashboard from './screens/SellerDashboard';
 import AppointmentsScreen from './screens/AppointmentsScreen';
 import OfficeChatScreen from './screens/OfficeChatScreen';
+import StockUsatoScreen from './screens/StockUsatoScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
 import * as Updates from 'expo-updates';
@@ -68,6 +69,13 @@ export default function App() {
           <Stack.Screen 
             name="OfficeChat" 
             component={OfficeChatScreen} 
+            options={{ headerShown: false }} 
+          />
+
+          {/* Stock Usato Inventory view stack entry */}
+          <Stack.Screen 
+            name="StockUsato" 
+            component={StockUsatoScreen} 
             options={{ headerShown: false }} 
           />
         </Stack.Navigator>
