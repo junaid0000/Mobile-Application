@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
@@ -83,7 +84,7 @@ export default function LoginScreen({ navigation }) {
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text style={styles.subtitle}>Rossomandi Service</Text>
+            <Text style={styles.subtitle}>Rossomandi Auto SRL</Text>
           </View>
 
           {/* Form */}
@@ -121,6 +122,14 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.linkText}>
                 Don't have an account? <Text style={styles.linkHighlight}>Sign Up</Text>
               </Text>
+            </TouchableOpacity>
+
+            {/* Public Guest Catalog Button */}
+            <TouchableOpacity 
+              style={styles.websiteButton} 
+              onPress={() => navigation.navigate('StockUsato', { isGuest: true })}
+            >
+              <Text style={styles.websiteButtonText}>🚗 Sfoglia Catalogo Auto (Ospite)</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -207,5 +216,20 @@ const styles = StyleSheet.create({
   linkHighlight: {
     color: '#FFC107',
     fontWeight: 'bold',
+  },
+  websiteButton: {
+    marginTop: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3A3F55',
+    backgroundColor: '#161822',
+    alignItems: 'center',
+  },
+  websiteButtonText: {
+    color: '#FFC107',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Rossomandi Client Service",
+    "name": "Rossomandi Auto SRL",
     "slug": "rossomandi-client-service",
-    "version": "1.0.5",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mobile",
@@ -10,15 +10,16 @@
     "ios": {
       "icon": "./assets/images/logo.png",
       "bundleIdentifier": "com.rossomand.app",
-      "buildNumber": "24",
+      "buildNumber": "37",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Rossomandi service requires access to photo library to upload documents.",
-        "NSCameraUsageDescription": "Rossomandi service requires access to camera to take photos of documents and vehicles."
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Rossomandi Auto SRL richiede l'accesso alla libreria foto per permettere agli utenti (venditori ed amministratori) di caricare e personalizzare la foto del proprio profilo.",
+        "NSCameraUsageDescription": "Rossomandi Auto SRL richiede l'accesso alla fotocamera per permettere agli utenti (venditori ed amministratori) di scattare una foto per il proprio profilo utente."
       }
     },
     "android": {
       "package": "com.rossomand.app",
-      "versionCode": 24,
+      "versionCode": 29,
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/images/logo.png"

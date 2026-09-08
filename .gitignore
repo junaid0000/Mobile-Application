@@ -26,3 +26,9 @@ mobile/.expo/
 
 # Uploads (user data)
 backend/uploads/
+
+# Build binaries & keys
+*.aab
+*.apk
+mobile/credentials.json
+

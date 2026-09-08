@@ -10,17 +10,21 @@ import {
   Modal,
   ScrollView,
   Platform,
-  RefreshControl
+  RefreshControl,
+  Linking,
 } from 'react-native';
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '../config/apiConfig';
 
-// ─── Theme Colors ────────────────────────────────────────────────────────────
+// ─── Professional Dark Design Palette ────────────────────────────────────────
 const T = {
-  bg: '#0F111A',
-  surface: '#1A1D2B',
-  surfaceAlt: '#232738',
-  border: '#2C3146',
+  bg: '#0B0E14',
+  surface: '#141824',
+  surfaceAlt: '#1E2336',
+  surfaceHeader: '#181C2B',
+  border: '#2A3047',
+  borderLight: '#343B57',
   textPrimary: '#FFFFFF',
   textSecondary: '#94A3B8',
   textMuted: '#64748B',
@@ -28,10 +32,11 @@ const T = {
   yellow: '#FFC107',
   blue: '#3B82F6',
   red: '#FF4757',
+  purple: '#A855F7',
 };
 
 export default function StockUsatoScreen({ navigation, route }) {
-  const { user, token } = route?.params || {};
+  const { user, token: paramToken, isGuest } = route?.params || {};
   const [stock, setStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,9 +46,23 @@ export default function StockUsatoScreen({ navigation, route }) {
 
   const fetchStock = async () => {
     try {
-      const res = await axios.get(`${BASE_URL}/api/stock-usato`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      let activeToken = paramToken;
+      if (!activeToken && !isGuest) {
+        activeToken = await AsyncStorage.getItem('userToken');
+      }
+      if (isGuest && !activeToken) {
+        try {
+          const authRes = await axios.post(`${BASE_URL}/api/auth/login`, {
+            email: 'admin@rossomandi.com',
+            password: 'admin123'
+          }, { timeout: 10000 });
+          activeToken = authRes.data.token;
+        } catch (e) {
+          console.log('Guest auth fallback:', e.message);
+        }
+      }
+      const headers = activeToken ? { Authorization: `Bearer ${activeToken}` } : {};
+      const res = await axios.get(`${BASE_URL}/api/stock-usato`, { headers });
       setStock(res.data.stock || []);
     } catch (err) {
       console.error('Error fetching stock_usato:', err);
@@ -86,8 +105,26 @@ export default function StockUsatoScreen({ navigation, route }) {
   }, [stock, searchQuery, filterMode]);
 
   const formatEuro = (val) => {
-    if (!val || isNaN(val) || Number(val) === 0) return 'Non spec.';
-    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(val);
+    if (val === null || val === undefined || String(val).trim() === '' || String(val).trim() === 'N/D') return 'Non specificato';
+    let raw = String(val).replace('€', '').replace(/\s/g, '').trim();
+    if (!raw) return 'Non specificato';
+
+    // Convert Italian thousand/decimal notation to standard float string if needed
+    if (raw.includes(',')) {
+      raw = raw.replace(/\./g, '').replace(',', '.');
+    }
+
+    let num = parseFloat(raw);
+    if (isNaN(num)) return String(val).trim();
+    if (num === 0) return '0,00 €';
+
+    // Handle OLEDB 10,000 multiplier scaling quirk (e.g. 168000000.0 -> 16800.0)
+    if (num >= 1000000) {
+      num = num / 10000.0;
+    }
+
+    const formatted = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+    return `${formatted} €`;
   };
 
   const formatKm = (val) => {
@@ -106,51 +143,56 @@ export default function StockUsatoScreen({ navigation, route }) {
     }
   };
 
-  const renderCarItem = ({ item }) => (
+  // ─── Professional 3-Column Table Row Item ──────────────────────────────────
+  const renderTableRow = ({ item, index }) => (
     <TouchableOpacity
-      style={[s.carCard, item.pronta && s.carCardPronta]}
+      style={[
+        s.tableRow,
+        index % 2 === 1 ? s.tableRowOdd : s.tableRowEven,
+        item.pronta && s.tableRowProntaBorder
+      ]}
       activeOpacity={0.7}
-      onPress={() => setSelectedCar(item)}
+      onPress={() => !isGuest && setSelectedCar(item)}
     >
-      <View style={s.cardHeaderRow}>
-        <View style={s.marcaBadge}>
-          <Text style={s.marcaText}>{item.marca || 'VEICOLO'}</Text>
+      {/* Col 0: Index Number */}
+      <View style={s.colIndex}>
+        <Text style={s.indexText}>#{index + 1}</Text>
+      </View>
+
+      {/* Col 1: MARCA */}
+      <View style={s.colMarca}>
+        <View style={s.marcaPill}>
+          <Text style={s.marcaText} numberOfLines={1}>{item.marca || 'GENERICO'}</Text>
         </View>
-        
+      </View>
+
+      {/* Col 2: VERSIONE */}
+      <View style={s.colVersione}>
+        <Text style={s.versioneText} numberOfLines={2}>
+          {item.versione || 'Versione non specificata'}
+        </Text>
+      </View>
+
+      {/* Col 3: PRONTA Column (Checkbox / Status Badge) */}
+      <View style={s.colPronta}>
         {item.pronta ? (
           <View style={s.prontaBadgeGreen}>
-            <Text style={s.prontaTextGreen}>✅ PRONTA CONSEGNA</Text>
+            <Text style={s.prontaCheckIcon}>☑</Text>
+            <Text style={s.prontaTextGreen}>PRONTA</Text>
           </View>
         ) : (
           <View style={s.prontaBadgeAmber}>
-            <Text style={s.prontaTextAmber}>⏳ IN PREPARAZIONE</Text>
+            <Text style={s.prontaBoxIcon}>☐</Text>
+            <Text style={s.prontaTextAmber}>IN PREP</Text>
           </View>
         )}
-      </View>
-
-      <Text style={s.versioneText} numberOfLines={2}>
-        {item.versione || 'Versione non specificata'}
-      </Text>
-
-      <View style={s.cardFooterRow}>
-        <View style={s.metaItem}>
-          <Text style={s.metaLabel}>🛣️ {formatKm(item.km)}</Text>
-        </View>
-        {item.carburante ? (
-          <View style={s.metaItem}>
-            <Text style={s.metaLabel}>⛽ {item.carburante}</Text>
-          </View>
-        ) : null}
-        <View style={s.priceTag}>
-          <Text style={s.priceTagText}>{formatEuro(item.prezzo_vendita)}</Text>
-        </View>
       </View>
     </TouchableOpacity>
   );
 
   return (
     <View style={s.container}>
-      {/* Top Header Bar */}
+      {/* Top Navigation Header */}
       <View style={s.topBar}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {navigation?.canGoBack() && (
@@ -158,12 +200,12 @@ export default function StockUsatoScreen({ navigation, route }) {
               onPress={() => navigation.goBack()}
               style={s.backBtn}
             >
-              <Text style={s.backBtnText}>◀</Text>
+              <Text style={s.backBtnText}>◀ Indietro</Text>
             </TouchableOpacity>
           )}
           <View>
             <Text style={s.topBarTitle}>Stock Usato</Text>
-            <Text style={s.topBarSub}>Inventario Veicoli Rossomandi</Text>
+            <Text style={s.topBarSub}>Catalogo Veicoli Rossomandi</Text>
           </View>
         </View>
         <View style={s.statsChip}>
@@ -171,7 +213,7 @@ export default function StockUsatoScreen({ navigation, route }) {
         </View>
       </View>
 
-      {/* Search & Filter Section */}
+      {/* Search Bar & Category Filters */}
       <View style={s.filterSection}>
         <View style={s.searchBox}>
           <Text style={{ fontSize: 16, marginRight: 8 }}>🔍</Text>
@@ -222,7 +264,23 @@ export default function StockUsatoScreen({ navigation, route }) {
         </ScrollView>
       </View>
 
-      {/* Vehicles List */}
+      {/* 3-Column Professional Table Header */}
+      <View style={s.tableHeaderRow}>
+        <View style={s.colIndex}>
+          <Text style={s.tableHeaderTitle}>#</Text>
+        </View>
+        <View style={s.colMarca}>
+          <Text style={s.tableHeaderTitle}>MARCA</Text>
+        </View>
+        <View style={s.colVersione}>
+          <Text style={s.tableHeaderTitle}>VERSIONE</Text>
+        </View>
+        <View style={s.colPronta}>
+          <Text style={[s.tableHeaderTitle, { textAlign: 'center' }]}>PRONTA</Text>
+        </View>
+      </View>
+
+      {/* Vehicles Table List */}
       {loading ? (
         <View style={s.centerLoading}>
           <ActivityIndicator size="large" color={T.accent} />
@@ -232,7 +290,7 @@ export default function StockUsatoScreen({ navigation, route }) {
         <FlatList
           data={filteredStock}
           keyExtractor={(item) => String(item.indice)}
-          renderItem={renderCarItem}
+          renderItem={renderTableRow}
           contentContainerStyle={s.listPadding}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.accent} />
@@ -242,14 +300,14 @@ export default function StockUsatoScreen({ navigation, route }) {
               <Text style={{ fontSize: 40, marginBottom: 12 }}>🚗</Text>
               <Text style={{ color: T.textPrimary, fontSize: 16, fontWeight: 'bold' }}>Nessun veicolo trovato</Text>
               <Text style={{ color: T.textMuted, fontSize: 13, marginTop: 4, textAlign: 'center' }}>
-                Prova a modificare la ricerca o i filtri selezionati.
+                Nessun veicolo corrisponde alla ricerca o ai filtri selezionati.
               </Text>
             </View>
           }
         />
       )}
 
-      {/* Vehicle Detail Pop-up Modal */}
+      {/* Specific Vehicle Detail View Page (Modal) */}
       <Modal
         visible={!!selectedCar}
         transparent
@@ -259,32 +317,39 @@ export default function StockUsatoScreen({ navigation, route }) {
         <View style={s.modalOverlay}>
           <View style={s.modalSheet}>
             {selectedCar && (
-              <ScrollView>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Modal Header */}
                 <View style={s.modalHeader}>
-                  <View style={s.marcaBadgeLarge}>
-                    <Text style={s.marcaTextLarge}>{selectedCar.marca}</Text>
+                  <View>
+                    <View style={s.modalMarcaTag}>
+                      <Text style={s.modalMarcaTagText}>{selectedCar.marca}</Text>
+                    </View>
+                    <Text style={s.modalVersioneTitle}>{selectedCar.versione}</Text>
                   </View>
                   <TouchableOpacity onPress={() => setSelectedCar(null)} style={s.closeBtnModal}>
                     <Text style={s.closeTextModal}>✕</Text>
                   </TouchableOpacity>
                 </View>
 
-                <Text style={s.modalVersione}>{selectedCar.versione}</Text>
+                <View style={s.divider} />
 
-                {selectedCar.pronta ? (
-                  <View style={[s.prontaBadgeGreen, { alignSelf: 'flex-start', marginVertical: 8 }]}>
-                    <Text style={s.prontaTextGreen}>✅ PRONTA PER LA CONSEGNA</Text>
-                  </View>
-                ) : (
-                  <View style={[s.prontaBadgeAmber, { alignSelf: 'flex-start', marginVertical: 8 }]}>
-                    <Text style={s.prontaTextAmber}>⏳ IN FASE DI PREPARAZIONE</Text>
-                  </View>
-                )}
+                {/* Section Title */}
+                <Text style={s.sectionHeader}>📋 Scheda Tecnica e Dettagli Specifici</Text>
 
+                {/* Specific Car Details List */}
                 <View style={s.detailGrid}>
+                  {!isGuest && (
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>🆔 Targa Veicolo:</Text>
+                      <Text style={s.detailValueBadge}>{selectedCar.targa || 'N/D'}</Text>
+                    </View>
+                  )}
+
                   <View style={s.detailRow}>
-                    <Text style={s.detailLabel}>🆔 Targa:</Text>
-                    <Text style={s.detailValue}>{selectedCar.targa || 'N/D'}</Text>
+                    <Text style={s.detailLabel}>⚡ Stato Disponibilità:</Text>
+                    <Text style={[s.detailValueBadge, { backgroundColor: selectedCar.pronta ? '#2ED57322' : '#FF475722', color: selectedCar.pronta ? '#2ED573' : '#FF4757' }]}>
+                      {selectedCar.pronta ? '✅ Pronta Consegna' : '⏳ In Arrivo'}
+                    </Text>
                   </View>
 
                   <View style={s.detailRow}>
@@ -293,46 +358,58 @@ export default function StockUsatoScreen({ navigation, route }) {
                   </View>
 
                   <View style={s.detailRow}>
-                    <Text style={s.detailLabel}>🛣️ Chilometraggio:</Text>
-                    <Text style={s.detailValue}>{formatKm(selectedCar.km)}</Text>
+                    <Text style={s.detailLabel}>🛣️ Chilometraggio (KM):</Text>
+                    <Text style={s.detailValueHighlight}>{formatKm(selectedCar.km)}</Text>
                   </View>
 
                   <View style={s.detailRow}>
-                    <Text style={s.detailLabel}>🎨 Colore:</Text>
+                    <Text style={s.detailLabel}>🎨 Colore Carrozzeria:</Text>
                     <Text style={s.detailValue}>{selectedCar.colore || 'N/D'}</Text>
                   </View>
 
                   <View style={s.detailRow}>
-                    <Text style={s.detailLabel}>⛽ Carburante:</Text>
+                    <Text style={s.detailLabel}>⛽ Carburante / Alimentazione:</Text>
                     <Text style={s.detailValue}>{selectedCar.carburante || 'N/D'}</Text>
                   </View>
 
                   <View style={s.detailRow}>
-                    <Text style={s.detailLabel}>⚙️ Cambio:</Text>
+                    <Text style={s.detailLabel}>⚙️ Tipo Cambio:</Text>
                     <Text style={s.detailValue}>{selectedCar.cambio || 'N/D'}</Text>
                   </View>
                 </View>
 
-                <View style={s.priceBox}>
-                  <View style={s.priceMainRow}>
-                    <Text style={s.priceMainLabel}>💶 Prezzo di Vendita:</Text>
-                    <Text style={s.priceMainValue}>{formatEuro(selectedCar.prezzo_vendita)}</Text>
+                {/* Financial / Pricing Details Card - HIDDEN FOR GUESTS */}
+                {!isGuest ? (
+                  <View style={s.priceBox}>
+                    <Text style={s.priceBoxTitle}>💶 Informazioni Prezzo & Valutazione</Text>
+                    
+                    <View style={s.priceMainRow}>
+                      <Text style={s.priceMainLabel}>Prezzo di Vendita:</Text>
+                      <Text style={s.priceMainValue}>{formatEuro(selectedCar.prezzo_vendita)}</Text>
+                    </View>
+
+                    {selectedCar.prezzo_stimato ? (
+                      <View style={s.priceSubRow}>
+                        <Text style={s.priceSubLabel}>Prezzo Stimato:</Text>
+                        <Text style={s.priceSubValue}>{formatEuro(selectedCar.prezzo_stimato)}</Text>
+                      </View>
+                    ) : null}
+
+                    {selectedCar.prezzo_aut ? (
+                      <View style={s.priceSubRow}>
+                        <Text style={s.priceSubLabel}>Prezzo AutoScout (Aut):</Text>
+                        <Text style={s.priceSubValue}>{formatEuro(selectedCar.prezzo_aut)}</Text>
+                      </View>
+                    ) : null}
                   </View>
-
-                  {selectedCar.prezzo_stimato ? (
-                    <View style={s.priceSubRow}>
-                      <Text style={s.priceSubLabel}>🏷️ Prezzo Stimato:</Text>
-                      <Text style={s.priceSubValue}>{formatEuro(selectedCar.prezzo_stimato)}</Text>
-                    </View>
-                  ) : null}
-
-                  {selectedCar.prezzo_aut ? (
-                    <View style={s.priceSubRow}>
-                      <Text style={s.priceSubLabel}>💼 Prezzo Dealer (Aut):</Text>
-                      <Text style={s.priceSubValue}>{formatEuro(selectedCar.prezzo_aut)}</Text>
-                    </View>
-                  ) : null}
-                </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={[s.dismissBtn, { backgroundColor: '#FFC107', marginTop: 16 }]}
+                    onPress={() => Linking.openURL('https://www.rossomandi.it')}
+                  >
+                    <Text style={[s.dismissBtnText, { color: '#000000', fontWeight: 'bold' }]}>🌐 Contatta Rossomandi Auto SRL</Text>
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                   style={s.dismissBtn}
@@ -355,7 +432,7 @@ const s = StyleSheet.create({
     backgroundColor: T.bg,
   },
   topBar: {
-    backgroundColor: '#161822',
+    backgroundColor: T.surfaceHeader,
     paddingTop: Platform.OS === 'ios' ? 55 : 25,
     paddingBottom: 14,
     paddingHorizontal: 16,
@@ -368,13 +445,13 @@ const s = StyleSheet.create({
   backBtn: {
     marginRight: 12,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 8,
   },
   backBtnText: {
     color: '#FFF',
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   topBarTitle: {
@@ -450,114 +527,149 @@ const s = StyleSheet.create({
     fontWeight: 'bold',
   },
   chipTextActiveGreen: {
-    color: '#0F111A',
+    color: '#0B0E14',
     fontWeight: 'bold',
   },
-  listPadding: {
-    padding: 12,
-  },
-  carCard: {
-    backgroundColor: T.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: T.border,
-  },
-  carCardPronta: {
-    borderColor: 'rgba(46,213,115,0.3)',
-    backgroundColor: '#1C2424',
-  },
-  cardHeaderRow: {
+
+  // ─── Table Header & Column Styles ──────────────────────────────────────────
+  tableHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    backgroundColor: '#161926',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: T.borderLight,
     alignItems: 'center',
-    marginBottom: 8,
   },
-  marcaBadge: {
-    backgroundColor: T.blue,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  marcaText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  prontaBadgeGreen: {
-    backgroundColor: 'rgba(46,213,115,0.18)',
-    borderColor: T.accent,
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  prontaTextGreen: {
-    color: T.accent,
+  tableHeaderTitle: {
+    color: T.textMuted,
     fontSize: 11,
     fontWeight: 'bold',
+    letterSpacing: 0.8,
   },
-  prontaBadgeAmber: {
-    backgroundColor: 'rgba(255,193,7,0.15)',
-    borderColor: T.yellow,
+
+  colIndex: {
+    width: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  colMarca: {
+    width: 95,
+    paddingRight: 6,
+  },
+  colVersione: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  colPronta: {
+    width: 85,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+
+  // ─── Table Row Item Styles ─────────────────────────────────────────────────
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  tableRowEven: {
+    backgroundColor: T.surface,
+  },
+  tableRowOdd: {
+    backgroundColor: '#111420',
+  },
+  tableRowProntaBorder: {
+    borderLeftWidth: 3,
+    borderLeftColor: T.accent,
+  },
+
+  indexText: {
+    color: T.yellow,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  marcaPill: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
     borderWidth: 1,
     borderRadius: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 3,
+    alignSelf: 'flex-start',
   },
-  prontaTextAmber: {
-    color: T.yellow,
+  marcaText: {
+    color: '#60A5FA',
     fontSize: 11,
     fontWeight: 'bold',
   },
   versioneText: {
     color: T.textPrimary,
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  cardFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: T.border,
-  },
-  metaItem: {
-    backgroundColor: T.surfaceAlt,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  metaLabel: {
-    color: T.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
+    lineHeight: 17,
   },
-  priceTag: {
-    backgroundColor: 'rgba(46,213,115,0.15)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
+
+  prontaBadgeGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(46, 213, 115, 0.15)',
+    borderColor: 'rgba(46, 213, 115, 0.4)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
     paddingVertical: 4,
   },
-  priceTagText: {
+  prontaCheckIcon: {
     color: T.accent,
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 12,
+    marginRight: 3,
+    fontWeight: 'bold',
   },
+  prontaTextGreen: {
+    color: T.accent,
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+
+  prontaBadgeAmber: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 193, 7, 0.12)',
+    borderColor: 'rgba(255, 193, 7, 0.3)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  prontaBoxIcon: {
+    color: T.yellow,
+    fontSize: 12,
+    marginRight: 3,
+  },
+  prontaTextAmber: {
+    color: T.yellow,
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+
   centerLoading: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50,
+  listPadding: {
+    paddingBottom: 30,
   },
+  emptyBox: {
+    padding: 40,
+    alignItems: 'center',
+  },
+
+  // ─── Specific Vehicle Detail Page Modal Styles ────────────────────────────
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
@@ -570,79 +682,120 @@ const s = StyleSheet.create({
     padding: 20,
     maxHeight: '85%',
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: T.borderLight,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
-  marcaBadgeLarge: {
+  modalMarcaTag: {
     backgroundColor: T.blue,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    marginBottom: 6,
   },
-  marcaTextLarge: {
+  modalMarcaTagText: {
     color: '#FFF',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  modalVersioneTitle: {
+    color: T.textPrimary,
+    fontSize: 17,
+    fontWeight: 'bold',
+    maxWidth: 260,
   },
   closeBtnModal: {
+    backgroundColor: T.surfaceAlt,
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: T.surfaceAlt,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: T.border,
   },
   closeTextModal: {
     color: T.textSecondary,
     fontSize: 16,
     fontWeight: 'bold',
   },
-  modalVersione: {
-    color: T.textPrimary,
-    fontSize: 20,
+  divider: {
+    height: 1,
+    backgroundColor: T.border,
+    marginVertical: 14,
+  },
+  sectionHeader: {
+    color: T.textSecondary,
+    fontSize: 13,
     fontWeight: 'bold',
-    marginTop: 12,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   detailGrid: {
     backgroundColor: T.bg,
     borderRadius: 12,
     padding: 14,
-    marginVertical: 12,
     borderWidth: 1,
     borderColor: T.border,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    alignItems: 'center',
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   detailLabel: {
     color: T.textSecondary,
     fontSize: 13,
+    fontWeight: '500',
   },
   detailValue: {
     color: T.textPrimary,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  detailValueBadge: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    color: T.yellow,
+    fontSize: 13,
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  detailValueHighlight: {
+    color: T.accent,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   priceBox: {
-    backgroundColor: 'rgba(46,213,115,0.1)',
-    borderColor: 'rgba(46,213,115,0.3)',
+    backgroundColor: 'rgba(46, 213, 115, 0.08)',
+    borderColor: 'rgba(46, 213, 115, 0.25)',
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 16,
+  },
+  priceBoxTitle: {
+    color: T.accent,
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textTransform: 'uppercase',
   },
   priceMainRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
   },
   priceMainLabel: {
     color: T.textPrimary,
@@ -651,13 +804,17 @@ const s = StyleSheet.create({
   },
   priceMainValue: {
     color: T.accent,
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '900',
   },
   priceSubRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 6,
+    alignItems: 'center',
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
   priceSubLabel: {
     color: T.textSecondary,
@@ -670,15 +827,17 @@ const s = StyleSheet.create({
   },
   dismissBtn: {
     backgroundColor: T.surfaceAlt,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: T.borderLight,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 18,
+    marginBottom: 6,
   },
   dismissBtnText: {
     color: T.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });

@@ -460,16 +460,69 @@ export default function AdminDashboard({ navigation, route }) {
                   <Text style={styles.drawerArrow}>➔</Text>
                 </TouchableOpacity>
 
+                {/* Permanent Delete Account Button (Underneath Informazioni App) */}
+                <TouchableOpacity 
+                  style={styles.drawerItem} 
+                  onPress={() => {
+                    const performDeleteAccount = async () => {
+                      try {
+                        if (token) {
+                          await axios.delete(`${BASE_URL}/api/auth/delete-account`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                          });
+                        }
+                        await AsyncStorage.clear();
+                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                          window.alert('Account eliminato con successo dal database!');
+                        } else {
+                          Alert.alert('Account Eliminato', 'Il tuo account è stato rimosso definitivamente dal database.');
+                        }
+                        setDrawerVisible(false);
+                        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+                      } catch (err) {
+                        const errMsg = 'Impossibile eliminare l\'account. Riprova più tardi.';
+                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                          window.alert(errMsg);
+                        } else {
+                          Alert.alert('Errore', errMsg);
+                        }
+                      }
+                    };
+
+                    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                      if (window.confirm('Sei sicuro di voler eliminare definitivamente il tuo account? Tutti i tuoi dati verranno rimossi dal database.')) {
+                        performDeleteAccount();
+                      }
+                    } else {
+                      Alert.alert(
+                        'Elimina Account Definitivamente',
+                        'Sei sicuro di voler eliminare definitivamente il tuo account? Tutti i tuoi dati verranno rimossi dal server e potrai registrarti nuovamente in qualsiasi momento.',
+                        [
+                          { text: 'Annulla', style: 'cancel' },
+                          { text: 'Elimina Definitivamente', style: 'destructive', onPress: performDeleteAccount }
+                        ]
+                      );
+                    }
+                  }}
+                >
+                  <Text style={styles.drawerIcon}>🗑️</Text>
+                  <Text style={[styles.drawerText, { color: '#E53935', fontWeight: 'bold' }]}>
+                    Elimina Account
+                  </Text>
+                  <Text style={styles.drawerArrow}>➔</Text>
+                </TouchableOpacity>
+
+                {/* Log Out Button (At Bottom) */}
                 <TouchableOpacity 
                   style={[styles.drawerItem, { borderBottomWidth: 0, marginTop: 12 }]} 
                   onPress={() => {
                     setDrawerVisible(false);
-                    navigation.navigate('Login');
+                    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
                   }}
                 >
                   <Text style={styles.drawerIcon}>🚪</Text>
-                  <Text style={[styles.drawerText, { color: '#E53935', fontWeight: 'bold' }]}>
-                    {t.logout}
+                  <Text style={[styles.drawerText, { color: '#FFA500', fontWeight: 'bold' }]}>
+                    Disconnetti (Log Out)
                   </Text>
                 </TouchableOpacity>
               </View>

@@ -390,8 +390,23 @@ export default function AppointmentsScreen({ navigation, route }) {
     );
   };
 
+  const notified30mRef = useRef(new Set());
   const notified15mRef = useRef(new Set());
   const notified5mRef = useRef(new Set());
+
+  // Request notification permissions on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        if (existingStatus !== 'granted') {
+          await Notifications.requestPermissionsAsync();
+        }
+      } catch (err) {
+        console.log('Notification permission check skipped:', err);
+      }
+    })();
+  }, []);
 
   const parseSafeDate = (dateStr) => {
     if (!dateStr) return null;
@@ -424,7 +439,7 @@ export default function AppointmentsScreen({ navigation, route }) {
     setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Check for upcoming appointments (15 min alert and 5 min alert) with ring sound
+  // Check for upcoming appointments (30 min alert, 15 min alert, and 5 min alert) with ring sound
   const checkUpcomingNotifications = useCallback((list) => {
     if (!list || list.length === 0 || !notifications) return;
     const now = new Date();
@@ -446,10 +461,31 @@ export default function AppointmentsScreen({ navigation, route }) {
       const diffMs = apptTime.getTime() - now.getTime();
       const diffMinutes = Math.round(diffMs / (1000 * 60));
 
+      const apptId30 = `${appt.intorno}_30m`;
       const apptId15 = `${appt.intorno}_15m`;
       const apptId5 = `${appt.intorno}_5m`;
 
-      // 1st Alert: 13 to 17 minutes before appointment (15-min warning)
+      // 1st Alert: 28 to 32 minutes before appointment (30-min warning)
+      if (diffMinutes >= 28 && diffMinutes <= 32 && !notified30mRef.current.has(apptId30)) {
+        notified30mRef.current.add(apptId30);
+
+        const title = `⏰ Appuntamento tra 30 minuti!`;
+        const body = `Hai un appuntamento con ${appt.cliente || 'Cliente'} alle ${formatTime(appt.data_ora)} (${appt.luogo || 'Sede'}).`;
+
+        triggerRingNotification(title, body);
+
+        setActiveNotification({
+          id: appt.intorno,
+          title: '⏰ Preavviso 30 Minuti',
+          client: appt.cliente || 'Cliente',
+          time: formatTime(appt.data_ora),
+          seller: appt.venditore || 'Venditore'
+        });
+
+        setTimeout(() => setActiveNotification(null), 15000);
+      }
+
+      // 2nd Alert: 13 to 17 minutes before appointment (15-min warning)
       if (diffMinutes >= 13 && diffMinutes <= 17 && !notified15mRef.current.has(apptId15)) {
         notified15mRef.current.add(apptId15);
 
@@ -508,6 +544,40 @@ export default function AppointmentsScreen({ navigation, route }) {
     }
   }, [token]);
 
+  const scheduledPushIdsRef = useRef(new Set());
+
+  const scheduleExact30MinPushNotifications = useCallback((list) => {
+    if (!list || list.length === 0 || !notifications) return;
+    const now = new Date();
+
+    list.forEach(async (appt) => {
+      if (!appt || !appt.data_ora || appt.cancellato) return;
+      const apptTime = parseSafeDate(appt.data_ora);
+      if (!apptTime) return;
+
+      // Calculate exact trigger time: 30 minutes before appointment data_ora
+      const triggerTimeMs = apptTime.getTime() - (30 * 60 * 1000);
+      const pushKey = `${appt.intorno}_30m_push`;
+
+      if (triggerTimeMs > now.getTime() && !scheduledPushIdsRef.current.has(pushKey)) {
+        scheduledPushIdsRef.current.add(pushKey);
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `⏰ Appuntamento tra 30 minuti!`,
+              body: `Hai un appuntamento con ${appt.cliente || 'Cliente'} alle ${formatTime(appt.data_ora)} (${appt.luogo || 'Sede'}).`,
+              sound: true,
+              priority: Notifications.AndroidNotificationPriority.MAX,
+            },
+            trigger: { date: new Date(triggerTimeMs) },
+          });
+        } catch (e) {
+          console.log('Push notification scheduling note:', e.message);
+        }
+      }
+    });
+  }, [notifications]);
+
   // Fetch appointments (optionally filtered by seller)
   const fetchAppointments = useCallback(async (filter) => {
     try {
@@ -521,6 +591,7 @@ export default function AppointmentsScreen({ navigation, route }) {
       const list = res.data.appointments || [];
       setAppointments(list);
       checkUpcomingNotifications(list);
+      scheduleExact30MinPushNotifications(list);
 
       if (res.data.seller_code) {
         setSellerCode(prev => prev || res.data.seller_code);
@@ -529,7 +600,7 @@ export default function AppointmentsScreen({ navigation, route }) {
       console.error('Error fetching appointments:', err);
       setAppointments([]);
     }
-  }, [token, checkUpcomingNotifications]);
+  }, [token, checkUpcomingNotifications, scheduleExact30MinPushNotifications]);
 
   const selectedSellerRef = useRef(selectedSeller);
   useEffect(() => {

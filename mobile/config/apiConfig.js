@@ -18,8 +18,9 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.h
 
 import axios from 'axios';
 
-// Always connect mobile app to live production server (Render)
-export const BASE_URL = PROD_BACKEND_URL;
+// Connect to local backend server in DEV mode (localhost:5000), or Render in production
+const LOCAL_BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:5000' : `http://${host}:5000`;
+export const BASE_URL = __DEV__ ? LOCAL_BACKEND_URL : PROD_BACKEND_URL;
 
 // Configure default axios headers
 axios.defaults.headers.common['bypass-tunnel-reminder'] = 'true';

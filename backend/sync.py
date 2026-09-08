@@ -9,6 +9,8 @@ import socket
 import threading
 import urllib.request
 import json
+import tempfile
+import uuid
 
 # --- CONFIGURATION ---
 # Network path to the live backend database on the server
@@ -453,65 +455,102 @@ def upsert_to_postgresql(data):
 
 def fetch_stock_usato_data(db_path):
     """Connects to Access DB and fetches all rows from StockUsato table safely."""
-    temp_path = None
-    is_temp = False
+    temp_path = os.path.abspath("temp_stock_sync.accdb")
+    conn_path = db_path
+    if copy_locked_file(db_path, temp_path):
+        conn_path = temp_path
+
     conn = None
     cursor = None
     try:
-        if os.path.exists(db_path):
-            temp_path = os.path.join(tempfile.gettempdir(), f"temp_stock_{uuid.uuid4().hex}.accdb")
-            shutil.copy2(db_path, temp_path)
-            read_path = temp_path
-            is_temp = True
-        else:
-            read_path = db_path
-
-        conn_str = get_odbc_connection_string(read_path)
-        conn = pyodbc.connect(conn_str, timeout=15)
-        cursor = conn.cursor()
-
+        rows = []
+        col_names = []
         try:
-            cursor.execute("SELECT [Indice], [Targa], [Marca], [Versione], [data 1° imn], [KM], [Colore], [Carburante], [Cambio], [prezzo stimato], [Prezzo Aut], [Prezzo di v], [Pronta] FROM StockUsato")
+            conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={conn_path};ReadOnly=1;"
+            conn = pyodbc.connect(conn_str, autocommit=True)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM StockUsato")
+            col_names = [col[0].lower() for col in cursor.description]
             rows = cursor.fetchall()
-        except Exception as table_err:
-            print(f"[StockUsato] Table query notice: {table_err}", flush=True)
-            return []
+        except Exception as direct_e:
+            print(f"[StockUsato Direct Conn Notice] {direct_e}", flush=True)
+
+        print(f"[StockUsato] Successfully queried StockUsato table! Columns: {col_names}", flush=True)
+        print(f"[StockUsato Debug] Total rows read from table: {len(rows)}", flush=True)
+
+        def get_val(row, col_map, key_names):
+            for kn in key_names:
+                kn_clean = kn.lower()
+                for cname, idx in col_map.items():
+                    if kn_clean in cname:
+                        return row[idx]
+            return None
+
+        col_map = {name: i for i, name in enumerate(col_names)}
 
         data = []
         for row in rows:
             try:
-                indice = int(row[0]) if row[0] is not None else None
-                if not indice:
+                raw_indice = get_val(row, col_map, ["indice", "id"])
+                if raw_indice is None:
                     continue
-                targa = str(row[1]).strip() if row[1] is not None else ""
-                marca = str(row[2]).strip() if row[2] is not None else ""
-                versione = str(row[3]).strip() if row[3] is not None else ""
+                indice = int(raw_indice)
+
+                targa = str(get_val(row, col_map, ["targa"]) or "").strip()
+                marca = str(get_val(row, col_map, ["marca"]) or "").strip()
+                versione = str(get_val(row, col_map, ["versione"]) or "").strip()
                 
-                dt_val = parse_date_val(row[4])
+                raw_date = get_val(row, col_map, ["immatricolazione", "data"])
+                dt_val = parse_date_val(raw_date)
                 
+                raw_km = get_val(row, col_map, ["km", "chilometr"])
                 km_val = 0
-                if row[5] is not None:
+                if raw_km is not None:
                     try:
-                        km_val = int(float(str(row[5]).replace('.', '').replace(',', '.').strip()))
+                        km_val = int(float(str(raw_km).replace('.', '').replace(',', '.').strip()))
                     except ValueError:
                         km_val = 0
                         
-                colore = str(row[6]).strip() if row[6] is not None else ""
-                carburante = str(row[7]).strip() if row[7] is not None else ""
-                cambio = str(row[8]).strip() if row[8] is not None else ""
+                colore = str(get_val(row, col_map, ["colore"]) or "").strip()
+                carburante = str(get_val(row, col_map, ["carburante"]) or "").strip()
+                cambio = str(get_val(row, col_map, ["cambio"]) or "").strip()
 
-                def parse_price(val):
-                    if val is None: return 0.0
+                def format_access_price(val):
+                    if val is None or str(val).strip() == '' or str(val).strip() == 'None':
+                        return ''
                     try:
-                        clean = str(val).replace('€', '').replace(' ', '').replace('.', '').replace(',', '.').strip()
-                        return float(clean)
-                    except ValueError:
-                        return 0.0
+                        from decimal import Decimal
+                        if isinstance(val, (int, float, Decimal)):
+                            num = float(val)
+                        else:
+                            raw_str = str(val).replace('€', '').replace(' ', '').replace('.', '').replace(',', '.').strip()
+                            num = float(raw_str)
+                            
+                        if num == 0:
+                            return '0,00 €'
+                        if num >= 1000000:
+                            num = num / 10000.0
+                            
+                        formatted = f"{num:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                        return f"{formatted} €"
+                    except Exception:
+                        return str(val).strip()
 
-                p_stimato = parse_price(row[9])
-                p_aut = parse_price(row[10])
-                p_vendita = parse_price(row[11])
-                pronta = bool(row[12]) if row[12] is not None else False
+                def get_exact_col_val(row, col_map, target_name):
+                    target = target_name.lower().strip()
+                    if target in col_map:
+                        return row[col_map[target]]
+                    for cname, idx in col_map.items():
+                        if target in cname:
+                            return row[idx]
+                    return None
+
+                p_stimato = format_access_price(get_exact_col_val(row, col_map, "prezzo stimato"))
+                p_aut = format_access_price(get_exact_col_val(row, col_map, "prezzo autoscout"))
+                p_vendita = format_access_price(get_exact_col_val(row, col_map, "prezzo di vendita") or get_exact_col_val(row, col_map, "prezzo di v"))
+                
+                raw_pronta = get_val(row, col_map, ["pronta"])
+                pronta = bool(raw_pronta) if raw_pronta is not None else False
 
                 data.append({
                     "indice": indice,
@@ -528,9 +567,11 @@ def fetch_stock_usato_data(db_path):
                     "prezzo_vendita": p_vendita,
                     "pronta": pronta
                 })
-            except Exception:
+            except Exception as row_e:
+                print(f"[StockUsato Row Error] {row_e}", flush=True)
                 continue
 
+        print(f"[StockUsato Debug] Successfully parsed {len(data)} vehicle items!", flush=True)
         return data
     except Exception as e:
         print(f"[StockUsato] Fetch error: {e}", flush=True)
@@ -542,26 +583,111 @@ def fetch_stock_usato_data(db_path):
         if conn:
             try: conn.close()
             except Exception: pass
-        if is_temp and temp_path and os.path.exists(temp_path):
-            try: os.remove(temp_path)
-            except Exception: pass
 
 def push_stock_usato_to_render(items):
-    """Pushes stock_usato items directly to live Render cloud server."""
+    """Pushes stock_usato items directly to live Render cloud server and local Node backend."""
     if not items:
         return
+    req_data = json.dumps({"items": items}).encode("utf-8")
+    
+    # 1. Push to local Node server
+    try:
+        local_url = "http://localhost:5000/api/sync/push-stock-usato"
+        req_local = urllib.request.Request(
+            local_url,
+            data=req_data,
+            headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
+        )
+        with urllib.request.urlopen(req_local, timeout=10) as resp:
+            print(f"[StockUsato Local Node Sync] Successfully pushed {len(items)} vehicles to Local Server! (HTTP {resp.status})", flush=True)
+    except Exception as err:
+        pass
+
+    # 2. Push to Render Cloud server
     try:
         render_url = "https://rossomandi-backend.onrender.com/api/sync/push-stock-usato"
-        req_data = json.dumps({"items": items}).encode("utf-8")
-        req = urllib.request.Request(
+        req_render = urllib.request.Request(
             render_url,
             data=req_data,
             headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req_render, timeout=30) as resp:
             print(f"[StockUsato Live Sync] Successfully pushed {len(items)} vehicles to Render Cloud DB! (HTTP {resp.status})", flush=True)
     except Exception as err:
         print(f"[StockUsato Live Sync Notice] {err}", flush=True)
+
+def upsert_stock_usato_to_local_postgresql(items):
+    """Inserts or updates stock_usato items in local PostgreSQL."""
+    if not items:
+        return
+    pg_conn = None
+    try:
+        pg_conn = psycopg2.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            dbname=PG_DATABASE,
+            user=PG_USER,
+            password=PG_PASSWORD
+        )
+        cursor = pg_conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public.stock_usato (
+                indice INT PRIMARY KEY,
+                targa VARCHAR(50),
+                marca VARCHAR(100),
+                versione VARCHAR(255),
+                data_immatricolazione TIMESTAMP WITH TIME ZONE,
+                km INT,
+                colore VARCHAR(100),
+                carburante VARCHAR(100),
+                cambio VARCHAR(100),
+                prezzo_stimato TEXT,
+                prezzo_aut TEXT,
+                prezzo_vendita TEXT,
+                pronta BOOLEAN DEFAULT FALSE,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+            ALTER TABLE public.stock_usato ALTER COLUMN prezzo_stimato TYPE TEXT USING prezzo_stimato::TEXT;
+            ALTER TABLE public.stock_usato ALTER COLUMN prezzo_aut TYPE TEXT USING prezzo_aut::TEXT;
+            ALTER TABLE public.stock_usato ALTER COLUMN prezzo_vendita TYPE TEXT USING prezzo_vendita::TEXT;
+        """)
+
+        for item in items:
+            cursor.execute("""
+                INSERT INTO public.stock_usato (indice, targa, marca, versione, data_immatricolazione, km, colore, carburante, cambio, prezzo_stimato, prezzo_aut, prezzo_vendita, pronta, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (indice)
+                DO UPDATE SET
+                    targa = EXCLUDED.targa,
+                    marca = EXCLUDED.marca,
+                    versione = EXCLUDED.versione,
+                    data_immatricolazione = EXCLUDED.data_immatricolazione,
+                    km = EXCLUDED.km,
+                    colore = EXCLUDED.colore,
+                    carburante = EXCLUDED.carburante,
+                    cambio = EXCLUDED.cambio,
+                    prezzo_stimato = EXCLUDED.prezzo_stimato,
+                    prezzo_aut = EXCLUDED.prezzo_aut,
+                    prezzo_vendita = EXCLUDED.prezzo_vendita,
+                    pronta = EXCLUDED.pronta,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                item["indice"], item["targa"], item["marca"], item["versione"],
+                item["data_immatricolazione"], item["km"], item["colore"],
+                item["carburante"], item["cambio"], item["prezzo_stimato"],
+                item["prezzo_aut"], item["prezzo_vendita"], item["pronta"]
+            ))
+
+        pg_conn.commit()
+        print(f"[StockUsato Local Sync] Successfully synced {len(items)} vehicles to local PostgreSQL!", flush=True)
+    except Exception as e:
+        print(f"[StockUsato Local Sync Error] {e}", flush=True)
+        if pg_conn:
+            pg_conn.rollback()
+    finally:
+        if pg_conn:
+            pg_conn.close()
 
 def main():
     print("MS Access Backend Sync Service started.", flush=True)
@@ -597,7 +723,8 @@ def main():
                 upsert_to_postgresql(data)
             
             if stock_data:
-                print(f"[StockUsato] Read {len(stock_data)} vehicles from Access DB. Syncing to Cloud...", flush=True)
+                print(f"[StockUsato] Read {len(stock_data)} vehicles from Access DB. Syncing...", flush=True)
+                upsert_stock_usato_to_local_postgresql(stock_data)
                 push_stock_usato_to_render(stock_data)
 
         except Exception as e:
