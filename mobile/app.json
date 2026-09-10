@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.rossomand.app",
-      "versionCode": 29,
+      "versionCode": 30,
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/images/logo.png"
