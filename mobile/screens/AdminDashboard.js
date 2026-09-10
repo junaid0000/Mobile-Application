@@ -343,6 +343,7 @@ export default function AdminDashboard({ navigation, route }) {
                 <Text style={styles.clayButtonText}>{t.manageSellers}</Text>
               </View>
             </TouchableOpacity>
+
           </View>
         </View>
 
