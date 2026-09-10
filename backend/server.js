@@ -18,10 +18,16 @@ app.get('/', (req, res) => res.json({ status: 'ok', message: 'Rossomandi Backend
 
 
 
-// Ensure uploads folder exists
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const JWT_SECRET = process.env.JWT_SECRET || 'rossomandi-super-secret-jwt-key-2026';
+
+// Ensure uploads folder exists (use /tmp on Vercel serverless)
+const UPLOADS_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.log('Uploads directory initialization note:', e.message);
 }
 
 // Serve uploads statically
@@ -243,7 +249,7 @@ const authenticateToken = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
   } catch (err) {
@@ -393,7 +399,7 @@ app.post('/api/auth/signup', async (req, res) => {
     // Generate token with role
     const token = jwt.sign(
       { id: newUser.rows[0].id, email: newUser.rows[0].email, role: newUser.rows[0].role },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '24h' }
     );
 
@@ -445,7 +451,7 @@ app.post('/api/auth/login', async (req, res) => {
     // Generate token with role
     const token = jwt.sign(
       { id: user.rows[0].id, email: user.rows[0].email, role: user.rows[0].role },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '24h' }
     );
 
