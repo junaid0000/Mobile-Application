@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 
 // Production server domain with SSL (HTTPS) for store builds
 // Replace PROD_BACKEND_URL with your live server domain when deployed
-const PROD_BACKEND_URL = 'https://rossomandi-backend.onrender.com';
+const PROD_BACKEND_URL = 'https://rossomandi-backend.vercel.app';
 
 let host = '192.168.12.152';
 
