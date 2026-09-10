@@ -51,9 +51,15 @@ export default function LoginScreen({ navigation }) {
       console.error('Login Error:', error);
       let message = 'Impossibile connettersi al server. Verifica la tua connessione internet.';
       if (error.response) {
-        message = typeof error.response.data === 'string'
-          ? error.response.data
-          : (error.response.data?.error || `Errore del server (${error.response.status})`);
+        if (typeof error.response.data === 'string') {
+          if (error.response.data.includes('<html') || error.response.data.includes('<!DOCTYPE')) {
+            message = 'Impossibile connettersi al server. Riprova tra qualche secondo.';
+          } else {
+            message = error.response.data;
+          }
+        } else {
+          message = error.response.data?.error || `Errore del server (${error.response.status})`;
+        }
       } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
         message = 'Il server sta avviando il servizio. Attendi qualche secondo e riprova.';
       } else if (error.message) {
