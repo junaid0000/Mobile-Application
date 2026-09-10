@@ -432,7 +432,7 @@ def upsert_to_postgresql(data):
 
             req_data = json.dumps({"appointments": payload_appts}).encode('utf-8')
             render_req = urllib.request.Request(
-                'https://rossomandi-backend.onrender.com/api/sync/push-appointments',
+                'https://rossomandi-backend.vercel.app/api/sync/push-appointments',
                 data=req_data,
                 headers={
                     'Content-Type': 'application/json',
@@ -605,7 +605,7 @@ def push_stock_usato_to_render(items):
 
     # 2. Push to Render Cloud server
     try:
-        render_url = "https://rossomandi-backend.onrender.com/api/sync/push-stock-usato"
+        render_url = "https://rossomandi-backend.vercel.app/api/sync/push-stock-usato"
         req_render = urllib.request.Request(
             render_url,
             data=req_data,
