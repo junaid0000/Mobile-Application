@@ -581,9 +581,9 @@ export default function AppointmentsScreen({ navigation, route }) {
   // Fetch appointments (optionally filtered by seller)
   const fetchAppointments = useCallback(async (filter) => {
     try {
-      let url = `${BASE_URL}/api/seller/appointments?all_history=true`;
+      let url = `${BASE_URL}/api/seller/appointments`;
       if (filter && filter !== '__ALL__') {
-        url += `&venditore=${encodeURIComponent(filter)}`;
+        url += `?venditore=${encodeURIComponent(filter)}`;
       }
       const res = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
