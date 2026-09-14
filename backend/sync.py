@@ -7,6 +7,10 @@ import os
 import shutil
 import socket
 import threading
+import urllib.request
+import json
+import tempfile
+import uuid
 
 # --- CONFIGURATION ---
 # Network path to the live backend database on the server
@@ -84,8 +88,6 @@ def parse_date_val(val):
 
 def copy_locked_file(src_path, dst_path):
     """Copies a file on Windows using Win32 API shared read flags, even if open and locked exclusively by MS Access."""
-    if Platform.OS if 'Platform' in globals() else False:
-        pass
     import ctypes
     from ctypes import wintypes
     try:
@@ -240,10 +242,11 @@ def fetch_access_data(db_path):
                     val = row[current_idx]
                     if isinstance(val, bool):
                         cancellato = val
-                    elif isinstance(val, int):
+                    elif isinstance(val, (int, float)):
                         cancellato = (val != 0)
                     elif val is not None:
-                        cancellato = str(val).strip().lower() in ('true', 'yes', 'si', '-1', '1')
+                        s = str(val).strip().lower()
+                        cancellato = s in ('true', 'yes', 'si', '-1', '1', '-1.0', '1.0', 'checked')
                     current_idx += 1
                 if tipo_col:
                     tipo = str(row[current_idx]).strip() if row[current_idx] is not None else None
@@ -373,7 +376,7 @@ def fetch_access_data(db_path):
                 print(f"Warning: Could not remove temporary file {temp_path}: {rm_err}")
 
 def upsert_to_postgresql(data):
-    """Inserts new or updates existing records in PostgreSQL."""
+    """Inserts new or updates existing records in PostgreSQL and pushes to Cloud backend."""
     if not data:
         return
         
@@ -385,14 +388,9 @@ def upsert_to_postgresql(data):
             dedup_dict[intorno] = item
     deduplicated_data = list(dedup_dict.values())
     
+    # 1. Local PostgreSQL sync (optional, fail-safe)
     pg_conn = None
     try:
-        pg_conn = psycopg2.connect(PG_CONN_STR)
-        cursor = pg_conn.cursor()
-        
-        # Purge legacy format rows without underscore on every sync loop pass
-        cursor.execute("DELETE FROM appointments WHERE POSITION('_' IN intorno) = 0;")
-        
         upsert_query = """
             INSERT INTO public.appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo)
             VALUES %s
@@ -407,12 +405,290 @@ def upsert_to_postgresql(data):
                 tipo = EXCLUDED.tipo,
                 last_sync = CURRENT_TIMESTAMP;
         """
+
+        pg_conn = psycopg2.connect(PG_CONN_STR)
+        cursor = pg_conn.cursor()
         
         execute_values(cursor, upsert_query, deduplicated_data)
         pg_conn.commit()
-        print(f"Successfully synced {len(deduplicated_data)} unique records to PostgreSQL.")
+        print(f"[OK] Successfully synced {len(deduplicated_data)} unique records to local PostgreSQL.", flush=True)
     except Exception as e:
-        print(f"Error writing to PostgreSQL: {e}")
+        print(f"[Local PG Notice] Could not write to local PostgreSQL: {e}", flush=True)
+    finally:
+        if pg_conn:
+            try:
+                pg_conn.close()
+            except Exception:
+                pass
+
+    # 2. Push synced records directly to live Cloud database on Vercel (ALWAYS RUNS)
+    try:
+        payload_appts = []
+        for item in deduplicated_data:
+            # item: (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo)
+            d_ora = item[3].isoformat() if item[3] else None
+            payload_appts.append({
+                "intorno": str(item[0]),
+                "cliente": item[1],
+                "venditore": item[2],
+                "data_ora": d_ora,
+                "luogo": item[4],
+                "note": item[5],
+                "cancellato": bool(item[6]) if item[6] is not None else False,
+                "tipo": item[7]
+            })
+
+        chunk_size = 300
+        total_pushed = 0
+        for i in range(0, len(payload_appts), chunk_size):
+            chunk = payload_appts[i:i + chunk_size]
+            req_data = json.dumps({"appointments": chunk}).encode('utf-8')
+            cloud_req = urllib.request.Request(
+                'https://rossomandi-backend.vercel.app/api/sync/push-appointments',
+                data=req_data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-sync-key': 'rossomandi_secret_sync_2026'
+                },
+                method='POST'
+            )
+            with urllib.request.urlopen(cloud_req, timeout=30) as resp:
+                total_pushed += len(chunk)
+
+        print(f"[LIVE VERCEL CLOUD SYNC] Successfully synced {total_pushed} records directly to Cloud DB!", flush=True)
+    except Exception as cloud_err:
+        print(f"[LIVE VERCEL CLOUD SYNC WARNING] Cloud sync error: {cloud_err}", flush=True)
+
+def fetch_stock_usato_data(db_path):
+    """Connects to Access DB and fetches all rows from StockUsato table safely."""
+    temp_path = os.path.abspath("temp_stock_sync.accdb")
+    conn_path = db_path
+    if copy_locked_file(db_path, temp_path):
+        conn_path = temp_path
+
+    conn = None
+    cursor = None
+    try:
+        rows = []
+        col_names = []
+        try:
+            conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={conn_path};ReadOnly=1;"
+            conn = pyodbc.connect(conn_str, autocommit=True)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM StockUsato")
+            col_names = [col[0].lower() for col in cursor.description]
+            rows = cursor.fetchall()
+        except Exception as direct_e:
+            print(f"[StockUsato Direct Conn Notice] {direct_e}", flush=True)
+
+        print(f"[StockUsato] Successfully queried StockUsato table! Columns: {col_names}", flush=True)
+        print(f"[StockUsato Debug] Total rows read from table: {len(rows)}", flush=True)
+
+        def get_val(row, col_map, key_names):
+            for kn in key_names:
+                kn_clean = kn.lower()
+                for cname, idx in col_map.items():
+                    if kn_clean in cname:
+                        return row[idx]
+            return None
+
+        col_map = {name: i for i, name in enumerate(col_names)}
+
+        data = []
+        for row in rows:
+            try:
+                raw_indice = get_val(row, col_map, ["indice", "id"])
+                if raw_indice is None:
+                    continue
+                indice = int(raw_indice)
+
+                targa = str(get_val(row, col_map, ["targa"]) or "").strip()
+                marca = str(get_val(row, col_map, ["marca"]) or "").strip()
+                versione = str(get_val(row, col_map, ["versione"]) or "").strip()
+                
+                raw_date = get_val(row, col_map, ["immatricolazione", "data"])
+                dt_val = parse_date_val(raw_date)
+                
+                raw_km = get_val(row, col_map, ["km", "chilometr"])
+                km_val = 0
+                if raw_km is not None:
+                    try:
+                        km_val = int(float(str(raw_km).replace('.', '').replace(',', '.').strip()))
+                    except ValueError:
+                        km_val = 0
+                        
+                colore = str(get_val(row, col_map, ["colore"]) or "").strip()
+                carburante = str(get_val(row, col_map, ["carburante"]) or "").strip()
+                cambio = str(get_val(row, col_map, ["cambio"]) or "").strip()
+
+                def format_access_price(val):
+                    if val is None or str(val).strip() == '' or str(val).strip() == 'None':
+                        return ''
+                    try:
+                        from decimal import Decimal
+                        if isinstance(val, (int, float, Decimal)):
+                            num = float(val)
+                        else:
+                            raw_str = str(val).replace('€', '').replace(' ', '').replace('.', '').replace(',', '.').strip()
+                            num = float(raw_str)
+                            
+                        if num == 0:
+                            return '0,00 €'
+                        if num >= 1000000:
+                            num = num / 10000.0
+                            
+                        formatted = f"{num:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                        return f"{formatted} €"
+                    except Exception:
+                        return str(val).strip()
+
+                def get_exact_col_val(row, col_map, target_name):
+                    target = target_name.lower().strip()
+                    if target in col_map:
+                        return row[col_map[target]]
+                    for cname, idx in col_map.items():
+                        if target in cname:
+                            return row[idx]
+                    return None
+
+                p_stimato = format_access_price(get_exact_col_val(row, col_map, "prezzo stimato"))
+                p_aut = format_access_price(get_exact_col_val(row, col_map, "prezzo autoscout"))
+                p_vendita = format_access_price(get_exact_col_val(row, col_map, "prezzo di vendita") or get_exact_col_val(row, col_map, "prezzo di v"))
+                
+                raw_pronta = get_val(row, col_map, ["pronta"])
+                pronta = bool(raw_pronta) if raw_pronta is not None else False
+
+                data.append({
+                    "indice": indice,
+                    "targa": targa,
+                    "marca": marca,
+                    "versione": versione,
+                    "data_immatricolazione": dt_val.isoformat() if dt_val else None,
+                    "km": km_val,
+                    "colore": colore,
+                    "carburante": carburante,
+                    "cambio": cambio,
+                    "prezzo_stimato": p_stimato,
+                    "prezzo_aut": p_aut,
+                    "prezzo_vendita": p_vendita,
+                    "pronta": pronta
+                })
+            except Exception as row_e:
+                print(f"[StockUsato Row Error] {row_e}", flush=True)
+                continue
+
+        print(f"[StockUsato Debug] Successfully parsed {len(data)} vehicle items!", flush=True)
+        return data
+    except Exception as e:
+        print(f"[StockUsato] Fetch error: {e}", flush=True)
+        return []
+    finally:
+        if cursor:
+            try: cursor.close()
+            except Exception: pass
+        if conn:
+            try: conn.close()
+            except Exception: pass
+
+def push_stock_usato_to_render(items):
+    """Pushes stock_usato items directly to live Render cloud server and local Node backend."""
+    if not items:
+        return
+    req_data = json.dumps({"items": items}).encode("utf-8")
+    
+    # 1. Push to local Node server
+    try:
+        local_url = "http://localhost:5000/api/sync/push-stock-usato"
+        req_local = urllib.request.Request(
+            local_url,
+            data=req_data,
+            headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
+        )
+        with urllib.request.urlopen(req_local, timeout=10) as resp:
+            print(f"[StockUsato Local Node Sync] Successfully pushed {len(items)} vehicles to Local Server! (HTTP {resp.status})", flush=True)
+    except Exception as err:
+        pass
+
+    # 2. Push to Render Cloud server
+    try:
+        render_url = "https://rossomandi-backend.vercel.app/api/sync/push-stock-usato"
+        req_render = urllib.request.Request(
+            render_url,
+            data=req_data,
+            headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
+        )
+        with urllib.request.urlopen(req_render, timeout=30) as resp:
+            print(f"[StockUsato Live Sync] Successfully pushed {len(items)} vehicles to Render Cloud DB! (HTTP {resp.status})", flush=True)
+    except Exception as err:
+        print(f"[StockUsato Live Sync Notice] {err}", flush=True)
+
+def upsert_stock_usato_to_local_postgresql(items):
+    """Inserts or updates stock_usato items in local PostgreSQL."""
+    if not items:
+        return
+    pg_conn = None
+    try:
+        pg_conn = psycopg2.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            dbname=PG_DATABASE,
+            user=PG_USER,
+            password=PG_PASSWORD
+        )
+        cursor = pg_conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public.stock_usato (
+                indice INT PRIMARY KEY,
+                targa VARCHAR(50),
+                marca VARCHAR(100),
+                versione VARCHAR(255),
+                data_immatricolazione TIMESTAMP WITH TIME ZONE,
+                km INT,
+                colore VARCHAR(100),
+                carburante VARCHAR(100),
+                cambio VARCHAR(100),
+                prezzo_stimato TEXT,
+                prezzo_aut TEXT,
+                prezzo_vendita TEXT,
+                pronta BOOLEAN DEFAULT FALSE,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+            ALTER TABLE public.stock_usato ALTER COLUMN prezzo_stimato TYPE TEXT USING prezzo_stimato::TEXT;
+            ALTER TABLE public.stock_usato ALTER COLUMN prezzo_aut TYPE TEXT USING prezzo_aut::TEXT;
+            ALTER TABLE public.stock_usato ALTER COLUMN prezzo_vendita TYPE TEXT USING prezzo_vendita::TEXT;
+        """)
+
+        for item in items:
+            cursor.execute("""
+                INSERT INTO public.stock_usato (indice, targa, marca, versione, data_immatricolazione, km, colore, carburante, cambio, prezzo_stimato, prezzo_aut, prezzo_vendita, pronta, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (indice)
+                DO UPDATE SET
+                    targa = EXCLUDED.targa,
+                    marca = EXCLUDED.marca,
+                    versione = EXCLUDED.versione,
+                    data_immatricolazione = EXCLUDED.data_immatricolazione,
+                    km = EXCLUDED.km,
+                    colore = EXCLUDED.colore,
+                    carburante = EXCLUDED.carburante,
+                    cambio = EXCLUDED.cambio,
+                    prezzo_stimato = EXCLUDED.prezzo_stimato,
+                    prezzo_aut = EXCLUDED.prezzo_aut,
+                    prezzo_vendita = EXCLUDED.prezzo_vendita,
+                    pronta = EXCLUDED.pronta,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                item["indice"], item["targa"], item["marca"], item["versione"],
+                item["data_immatricolazione"], item["km"], item["colore"],
+                item["carburante"], item["cambio"], item["prezzo_stimato"],
+                item["prezzo_aut"], item["prezzo_vendita"], item["pronta"]
+            ))
+
+        pg_conn.commit()
+        print(f"[StockUsato Local Sync] Successfully synced {len(items)} vehicles to local PostgreSQL!", flush=True)
+    except Exception as e:
+        print(f"[StockUsato Local Sync Error] {e}", flush=True)
         if pg_conn:
             pg_conn.rollback()
     finally:
@@ -433,42 +709,34 @@ def main():
         os.path.join(user_home, "Desktop", "Gestione VN2_be.accdb"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_sync.accdb"),
     ]
-    
-    # Clean up old legacy rows in PostgreSQL that don't use the concatenated unique key format
-    try:
-        pg_c = psycopg2.connect(PG_CONN_STR)
-        with pg_c.cursor() as cur:
-            cur.execute("DELETE FROM appointments WHERE POSITION('_' IN intorno) = 0;")
-            pg_c.commit()
-        pg_c.close()
-    except Exception:
-        pass
 
     while True:
         try:
             data = None
+            stock_data = None
             for path in candidate_paths:
                 if os.path.exists(path):
                     is_server = "192.168.12.250" in path or path.startswith("Z:")
                     tag = "LIVE SERVER" if is_server else "LOCAL FALLBACK"
                     print(f"[{tag}] Connected to Access DB at: {path}", flush=True)
                     data = fetch_access_data(path)
-                    if data:
+                    stock_data = fetch_stock_usato_data(path)
+                    if data or stock_data:
                         break
                                 
             if data:
                 print(f"[Sync] Read {len(data)} records from Access DB. Syncing to PostgreSQL...", flush=True)
                 upsert_to_postgresql(data)
-            else:
-                print("[Sync] Access DB not found. Checked paths:", flush=True)
-                for p in candidate_paths:
-                    print(f"  - {p}", flush=True)
-                print("[Sync] Waiting 7 seconds...", flush=True)
-                
+            
+            if stock_data:
+                print(f"[StockUsato] Read {len(stock_data)} vehicles from Access DB. Syncing...", flush=True)
+                upsert_stock_usato_to_local_postgresql(stock_data)
+                push_stock_usato_to_render(stock_data)
+
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
             
-        time.sleep(7)
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()

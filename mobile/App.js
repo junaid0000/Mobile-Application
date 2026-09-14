@@ -10,11 +10,31 @@ import AdminDashboard from './screens/AdminDashboard';
 import SellerDashboard from './screens/SellerDashboard';
 import AppointmentsScreen from './screens/AppointmentsScreen';
 import OfficeChatScreen from './screens/OfficeChatScreen';
+import StockUsatoScreen from './screens/StockUsatoScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
+
+import * as Updates from 'expo-updates';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  React.useEffect(() => {
+    async function checkForUpdates() {
+      if (!__DEV__) {
+        try {
+          const update = await Updates.checkForUpdateAsync();
+          if (update.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            await Updates.reloadAsync();
+          }
+        } catch (e) {
+          console.log('Update check note:', e.message);
+        }
+      }
+    }
+    checkForUpdates();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>
@@ -49,6 +69,13 @@ export default function App() {
           <Stack.Screen 
             name="OfficeChat" 
             component={OfficeChatScreen} 
+            options={{ headerShown: false }} 
+          />
+
+          {/* Stock Usato Inventory view stack entry */}
+          <Stack.Screen 
+            name="StockUsato" 
+            component={StockUsatoScreen} 
             options={{ headerShown: false }} 
           />
         </Stack.Navigator>

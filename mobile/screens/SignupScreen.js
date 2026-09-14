@@ -37,10 +37,6 @@ export default function SignupScreen({ navigation }) {
       Alert.alert('Errore', 'Inserisci il Codice di Sicurezza Amministratore (es. 1234)');
       return;
     }
-    if (role === 'seller' && !venditoreCode.trim()) {
-      Alert.alert('Errore', 'Seleziona o inserisci il tuo Codice Venditore (es. MR, AP, GC)');
-      return;
-    }
 
     setLoading(true);
     try {
@@ -135,13 +131,13 @@ export default function SignupScreen({ navigation }) {
         {/* Seller Code Selector / Input (Only if Seller is selected) */}
         {role === 'seller' && (
           <View style={styles.sellerCodeBox}>
-            <Text style={styles.sellerCodeLabel}>Seleziona o conferma il tuo Codice Venditore:</Text>
+            <Text style={styles.sellerCodeLabel}>Seleziona il tuo Codice Venditore (Opzionale):</Text>
             <View style={styles.codePillsRow}>
               {availableSellers.map(code => (
                 <TouchableOpacity
                   key={code}
                   style={[styles.codePill, venditoreCode === code && styles.codePillActive]}
-                  onPress={() => setVenditoreCode(code)}
+                  onPress={() => setVenditoreCode(venditoreCode === code ? '' : code)}
                 >
                   <Text style={[styles.codePillText, venditoreCode === code && styles.codePillTextActive]}>
                     #{code}
@@ -152,7 +148,7 @@ export default function SignupScreen({ navigation }) {
 
             <TextInput
               style={[styles.input, { borderColor: '#FF5500', marginTop: 12, marginBottom: 0 }]}
-              placeholder="Oppure inserisci codice venditore"
+              placeholder="Oppure inserisci codice venditore (Opzionale)"
               placeholderTextColor="#FF9966"
               autoCapitalize="characters"
               value={venditoreCode}

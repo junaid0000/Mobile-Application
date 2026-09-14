@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
@@ -27,13 +28,18 @@ export default function LoginScreen({ navigation }) {
   const API_URL = `${BASE_URL}/api/auth/login`;
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    const cleanEmail = email.toLowerCase().trim();
+    if (!cleanEmail || !password) {
       Alert.alert('Error', 'Please fill all fields');
       return;
     }
     setLoading(true);
     try {
-      const response = await axios.post(API_URL, { email, password });
+      const response = await axios.post(
+        API_URL,
+        { email: cleanEmail, password },
+        { timeout: 35000 }
+      );
       const { user, token } = response.data;
 
       if (user.role === 'admin') {
@@ -42,7 +48,24 @@ export default function LoginScreen({ navigation }) {
         navigation.navigate('SellerDashboard', { user, token });
       }
     } catch (error) {
-      Alert.alert('Login Failed', error.response?.data?.error || 'Network error');
+      console.error('Login Error:', error);
+      let message = 'Impossibile connettersi al server. Verifica la tua connessione internet.';
+      if (error.response) {
+        if (typeof error.response.data === 'string') {
+          if (error.response.data.includes('<html') || error.response.data.includes('<!DOCTYPE')) {
+            message = 'Impossibile connettersi al server. Riprova tra qualche secondo.';
+          } else {
+            message = error.response.data;
+          }
+        } else {
+          message = error.response.data?.error || `Errore del server (${error.response.status})`;
+        }
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        message = 'Il server sta avviando il servizio. Attendi qualche secondo e riprova.';
+      } else if (error.message) {
+        message = error.message;
+      }
+      Alert.alert('Login Non Riuscito', message);
     } finally {
       setLoading(false);
     }
@@ -67,7 +90,7 @@ export default function LoginScreen({ navigation }) {
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text style={styles.subtitle}>Rossomandi Service</Text>
+            <Text style={styles.subtitle}>Rossomandi Auto SRL</Text>
           </View>
 
           {/* Form */}
@@ -105,6 +128,14 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.linkText}>
                 Don't have an account? <Text style={styles.linkHighlight}>Sign Up</Text>
               </Text>
+            </TouchableOpacity>
+
+            {/* Public Guest Catalog Button */}
+            <TouchableOpacity 
+              style={styles.websiteButton} 
+              onPress={() => navigation.navigate('StockUsato', { isGuest: true })}
+            >
+              <Text style={styles.websiteButtonText}>🚗 Sfoglia Catalogo Auto (Ospite)</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -191,5 +222,20 @@ const styles = StyleSheet.create({
   linkHighlight: {
     color: '#FFC107',
     fontWeight: 'bold',
+  },
+  websiteButton: {
+    marginTop: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3A3F55',
+    backgroundColor: '#161822',
+    alignItems: 'center',
+  },
+  websiteButtonText: {
+    color: '#FFC107',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Rossomandi Client Service",
+    "name": "Rossomandi Auto SRL",
     "slug": "rossomandi-client-service",
-    "version": "1.0.0",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mobile",
@@ -10,14 +10,16 @@
     "ios": {
       "icon": "./assets/images/logo.png",
       "bundleIdentifier": "com.rossomand.app",
-      "buildNumber": "1",
+      "buildNumber": "38",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Rossomandi service requires access to photo library to upload documents.",
-        "NSCameraUsageDescription": "Rossomandi service requires access to camera to take photos of documents and vehicles."
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Rossomandi Auto SRL richiede l'accesso alla libreria foto per permettere agli utenti (venditori ed amministratori) di caricare e personalizzare la foto del proprio profilo.",
+        "NSCameraUsageDescription": "Rossomandi Auto SRL richiede l'accesso alla fotocamera per permettere agli utenti (venditori ed amministratori) di scattare una foto per il proprio profilo utente."
       }
     },
     "android": {
       "package": "com.rossomand.app",
+      "versionCode": 30,
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/images/logo.png"
@@ -44,6 +46,10 @@
       ],
       "expo-font"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/3d29d857-6ead-43b8-b5ef-1f4096cca616"
+    },
+    "runtimeVersion": "1.0.0",
     "extra": {
       "eas": {
         "projectId": "3d29d857-6ead-43b8-b5ef-1f4096cca616"

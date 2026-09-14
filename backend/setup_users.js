@@ -15,9 +15,11 @@ const pg = require('pg');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
-const connectionConfig = process.env.DATABASE_URL
+const dbUrl = process.argv[2] || process.env.DATABASE_URL;
+
+const connectionConfig = dbUrl
   ? {
-      connectionString: process.env.DATABASE_URL,
+      connectionString: dbUrl,
       ssl: { rejectUnauthorized: false },
     }
   : {
@@ -47,7 +49,7 @@ async function setup() {
       console.log(`  [${u.role.toUpperCase()}] ${u.name} <${u.email}> (code: ${u.venditore_code || 'none'})`);
     });
 
-    // ─── 3. Create Admin (if not already there) ────────────────────────────
+    // ─── 3. Create Admin ───────────────────────────────────────────────────
     const adminEmail = 'admin@rossomandi.com';
     const adminExists = await pool.query('SELECT id FROM users WHERE email = $1', [adminEmail]);
     if (adminExists.rows.length === 0) {
@@ -61,74 +63,30 @@ async function setup() {
       console.log('\n✓ Admin already exists: admin@rossomandi.com / admin123');
     }
 
-    // ─── 4. Create Seller ─────────────────────────────────────────────────
-    const sellerEmail = 'venditore1@rossomandi.com';
-    const sellerExists = await pool.query('SELECT id FROM users WHERE email = $1', [sellerEmail]);
-    if (sellerExists.rows.length === 0) {
+    // ─── 4. Create Seller: Massimo (Code: MR) ──────────────────────────────
+    const massimoEmail = 'massimo@rossomandi.com';
+    const massimoExists = await pool.query('SELECT id FROM users WHERE email = $1', [massimoEmail]);
+    if (massimoExists.rows.length === 0) {
       const hash = await bcrypt.hash('seller123', 10);
       await pool.query(
         "INSERT INTO users (name, email, password, role, venditore_code) VALUES ($1, $2, $3, $4, $5)",
-        ['Venditore Uno', sellerEmail, hash, 'seller', 'V001']
+        ['Massimo', massimoEmail, hash, 'seller', 'MR']
       );
-      console.log('✓ Created SELLER: venditore1@rossomandi.com / seller123 (code: V001)');
+      console.log('✓ Created SELLER (Massimo): massimo@rossomandi.com / seller123 (code: MR)');
     } else {
-      // Make sure venditore_code is set
       await pool.query(
-        "UPDATE users SET role = 'seller', venditore_code = 'V001' WHERE email = $1 AND venditore_code IS NULL",
-        [sellerEmail]
+        "UPDATE users SET role = 'seller', venditore_code = 'MR' WHERE email = $1",
+        [massimoEmail]
       );
-      console.log('✓ Seller already exists: venditore1@rossomandi.com / seller123');
+      console.log('✓ Seller (Massimo) already exists: massimo@rossomandi.com / seller123 (code: MR)');
     }
 
-    // ─── 5. Create Client ─────────────────────────────────────────────────
-    const clientEmail = 'cliente1@rossomandi.com';
-    const clientExists = await pool.query('SELECT id FROM users WHERE email = $1', [clientEmail]);
-    if (clientExists.rows.length === 0) {
-      const hash = await bcrypt.hash('client123', 10);
-      await pool.query(
-        "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4)",
-        ['Cliente Uno', clientEmail, hash, 'client']
-      );
-      console.log('✓ Created CLIENT: cliente1@rossomandi.com / client123');
-    } else {
-      console.log('✓ Client already exists: cliente1@rossomandi.com / client123');
-    }
-
-    // ─── 6. Insert sample appointments ───────────────────────────────────
-    const apptCount = await pool.query('SELECT COUNT(*) as cnt FROM appointments');
-    if (parseInt(apptCount.rows[0].cnt) === 0) {
-      const now = new Date();
-      const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
-      const nextWeek = new Date(now); nextWeek.setDate(now.getDate() + 7);
-      const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-
-      const sampleAppts = [
-        ['APP-001', 'Mario Rossi',    'V001', tomorrow, 'Milano - Via Roma 10',    'Prima visita cliente', false],
-        ['APP-002', 'Giuseppe Verdi', 'V001', nextWeek, 'Torino - Corso Italia 5', 'Rinnovo contratto',    false],
-        ['APP-003', 'Anna Bianchi',   'V001', yesterday,'Roma - Via Nazionale 1',  'Appuntamento passato', false],
-      ];
-
-      for (const a of sampleAppts) {
-        await pool.query(
-          `INSERT INTO appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (intorno) DO NOTHING`,
-          a
-        );
-      }
-      console.log('✓ Inserted 3 sample appointments for V001');
-    } else {
-      console.log(`✓ Appointments already exist (${apptCount.rows[0].cnt} total) — none added`);
-    }
-
-    // ─── 7. Summary ───────────────────────────────────────────────────────
+    // ─── 5. Summary ───────────────────────────────────────────────────────
     console.log('\n======================================');
-    console.log('  SETUP COMPLETE — Login credentials:');
+    console.log('  SETUP COMPLETE — Accounts Ready:');
     console.log('======================================');
     console.log('  ADMIN  : admin@rossomandi.com    / admin123');
-    console.log('  SELLER : venditore1@rossomandi.com / seller123');
-    console.log('  CLIENT : cliente1@rossomandi.com  / client123');
-    console.log('\n  NOTE: The SELLER account has venditore_code = V001');
-    console.log('  All sellers MUST have a venditore_code to see their appointments.');
+    console.log('  SELLER : massimo@rossomandi.com  / seller123 (code: MR)');
     console.log('======================================\n');
 
   } catch (err) {
