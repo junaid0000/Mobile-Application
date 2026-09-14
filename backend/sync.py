@@ -693,11 +693,11 @@ def main():
     print("MS Access Backend Sync Service started.", flush=True)
     user_home = os.path.expanduser("~")
     candidate_paths = [
-        r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb",
         r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb",
         r"\\192.168.12.250\Agenda Vendita\Gestione VN2_be.accdb",
         r"Z:\Gestione VN2_be.accdb",
         r"Z:\Agenda Vendita\Gestione VN2_be.accdb",
+        r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb",
         r"C:\Users\Public\Public Documents\Agenda Vendita\Gestione VN2_be.accdb",
         os.path.join(user_home, "Documents", "Agenda Vendita", "Gestione VN2_be.accdb"),
         os.path.join(user_home, "Desktop", "Gestione VN2_be.accdb"),
