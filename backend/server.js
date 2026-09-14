@@ -860,11 +860,8 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
     }
 
     if (!includeHistory) {
-      // Admin: Current month (1st of month) to future
-      // Seller: Yesterday to future
-      const dateFilter = isAdminUser
-        ? "data_ora >= DATE_TRUNC('month', CURRENT_DATE)"
-        : "data_ora >= (CURRENT_DATE - INTERVAL '1 day')";
+      // Default: show appointments from past 60 days onwards so recent cancellations are visible
+      const dateFilter = "data_ora >= (CURRENT_DATE - INTERVAL '60 days')";
 
       if (queryParams.length > 0) {
         queryText += ` AND (${dateFilter} OR data_ora IS NULL)`;
