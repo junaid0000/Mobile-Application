@@ -376,7 +376,7 @@ def fetch_access_data(db_path):
                 print(f"Warning: Could not remove temporary file {temp_path}: {rm_err}")
 
 def upsert_to_postgresql(data):
-    """Inserts new or updates existing records in PostgreSQL."""
+    """Inserts new or updates existing records in PostgreSQL and pushes to Cloud backend."""
     if not data:
         return
         
@@ -388,6 +388,7 @@ def upsert_to_postgresql(data):
             dedup_dict[intorno] = item
     deduplicated_data = list(dedup_dict.values())
     
+    # 1. Local PostgreSQL sync (optional, fail-safe)
     pg_conn = None
     try:
         upsert_query = """
@@ -410,28 +411,39 @@ def upsert_to_postgresql(data):
         
         execute_values(cursor, upsert_query, deduplicated_data)
         pg_conn.commit()
-        print(f"[OK] Successfully synced {len(deduplicated_data)} unique records to local PostgreSQL.")
+        print(f"[OK] Successfully synced {len(deduplicated_data)} unique records to local PostgreSQL.", flush=True)
+    except Exception as e:
+        print(f"[Local PG Notice] Could not write to local PostgreSQL: {e}", flush=True)
+    finally:
+        if pg_conn:
+            try:
+                pg_conn.close()
+            except Exception:
+                pass
 
-        # Push synced records directly to Render live cloud database
-        try:
-            import json
-            payload_appts = []
-            for item in deduplicated_data:
-                # item: (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo)
-                d_ora = item[3].isoformat() if item[3] else None
-                payload_appts.append({
-                    "intorno": str(item[0]),
-                    "cliente": item[1],
-                    "venditore": item[2],
-                    "data_ora": d_ora,
-                    "luogo": item[4],
-                    "note": item[5],
-                    "cancellato": bool(item[6]) if item[6] is not None else False,
-                    "tipo": item[7]
-                })
+    # 2. Push synced records directly to live Cloud database on Vercel (ALWAYS RUNS)
+    try:
+        payload_appts = []
+        for item in deduplicated_data:
+            # item: (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo)
+            d_ora = item[3].isoformat() if item[3] else None
+            payload_appts.append({
+                "intorno": str(item[0]),
+                "cliente": item[1],
+                "venditore": item[2],
+                "data_ora": d_ora,
+                "luogo": item[4],
+                "note": item[5],
+                "cancellato": bool(item[6]) if item[6] is not None else False,
+                "tipo": item[7]
+            })
 
-            req_data = json.dumps({"appointments": payload_appts}).encode('utf-8')
-            render_req = urllib.request.Request(
+        chunk_size = 300
+        total_pushed = 0
+        for i in range(0, len(payload_appts), chunk_size):
+            chunk = payload_appts[i:i + chunk_size]
+            req_data = json.dumps({"appointments": chunk}).encode('utf-8')
+            cloud_req = urllib.request.Request(
                 'https://rossomandi-backend.vercel.app/api/sync/push-appointments',
                 data=req_data,
                 headers={
@@ -440,18 +452,12 @@ def upsert_to_postgresql(data):
                 },
                 method='POST'
             )
-            with urllib.request.urlopen(render_req, timeout=30) as resp:
-                print(f"[LIVE RENDER CLOUD SYNC] Successfully synced {len(payload_appts)} records directly to Render Cloud DB! (HTTP {resp.status})", flush=True)
-        except Exception as render_err:
-            print(f"[LIVE RENDER CLOUD SYNC WARNING] Cloud sync notice: {render_err}", flush=True)
+            with urllib.request.urlopen(cloud_req, timeout=30) as resp:
+                total_pushed += len(chunk)
 
-    except Exception as e:
-        print(f"Error writing to PostgreSQL: {e}")
-        if pg_conn:
-            pg_conn.rollback()
-    finally:
-        if pg_conn:
-            pg_conn.close()
+        print(f"[LIVE VERCEL CLOUD SYNC] Successfully synced {total_pushed} records directly to Cloud DB!", flush=True)
+    except Exception as cloud_err:
+        print(f"[LIVE VERCEL CLOUD SYNC WARNING] Cloud sync error: {cloud_err}", flush=True)
 
 def fetch_stock_usato_data(db_path):
     """Connects to Access DB and fetches all rows from StockUsato table safely."""

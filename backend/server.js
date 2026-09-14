@@ -909,7 +909,7 @@ app.post('/api/appointments/toggle-cancel', async (req, res) => {
   }
 });
 
-// Sync endpoint allowing local sync.py script to push MS Access appointments directly to Render DB
+// Sync endpoint allowing local sync.py script to push MS Access appointments directly to Cloud DB
 app.post('/api/sync/push-appointments', async (req, res) => {
   try {
     const syncKey = req.headers['x-sync-key'];
@@ -921,35 +921,45 @@ app.post('/api/sync/push-appointments', async (req, res) => {
       return res.json({ success: true, count: 0 });
     }
 
-    const query = `
-      INSERT INTO appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo, last_sync)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
-      ON CONFLICT (intorno)
-      DO UPDATE SET 
-        cliente = EXCLUDED.cliente,
-        venditore = EXCLUDED.venditore,
-        data_ora = EXCLUDED.data_ora,
-        luogo = EXCLUDED.luogo,
-        note = EXCLUDED.note,
-        cancellato = EXCLUDED.cancellato,
-        tipo = EXCLUDED.tipo,
-        last_sync = CURRENT_TIMESTAMP;
-    `;
+    const BATCH_SIZE = 150;
+    for (let i = 0; i < appointments.length; i += BATCH_SIZE) {
+      const chunk = appointments.slice(i, i + BATCH_SIZE);
+      const values = [];
+      const valueStrings = [];
+      
+      chunk.forEach((appt, idx) => {
+        const offset = idx * 8;
+        valueStrings.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, CURRENT_TIMESTAMP)`);
+        values.push(
+          appt.intorno,
+          appt.cliente,
+          appt.venditore,
+          appt.data_ora || null,
+          appt.luogo || null,
+          appt.note || null,
+          appt.cancellato || false,
+          appt.tipo || null
+        );
+      });
 
-    for (const appt of appointments) {
-      await db.query(query, [
-        appt.intorno,
-        appt.cliente,
-        appt.venditore,
-        appt.data_ora || null,
-        appt.luogo || null,
-        appt.note || null,
-        appt.cancellato || false,
-        appt.tipo || null
-      ]);
+      const batchQuery = `
+        INSERT INTO appointments (intorno, cliente, venditore, data_ora, luogo, note, cancellato, tipo, last_sync)
+        VALUES ${valueStrings.join(', ')}
+        ON CONFLICT (intorno)
+        DO UPDATE SET 
+          cliente = EXCLUDED.cliente,
+          venditore = EXCLUDED.venditore,
+          data_ora = EXCLUDED.data_ora,
+          luogo = EXCLUDED.luogo,
+          note = EXCLUDED.note,
+          cancellato = EXCLUDED.cancellato,
+          tipo = EXCLUDED.tipo,
+          last_sync = CURRENT_TIMESTAMP;
+      `;
+      await db.query(batchQuery, values);
     }
 
-    console.log(`Synced ${appointments.length} appointments from sync script!`);
+    console.log(`Synced ${appointments.length} appointments from sync script in fast batches!`);
     res.json({ success: true, count: appointments.length });
   } catch (err) {
     console.error('Error syncing appointments:', err.message);
