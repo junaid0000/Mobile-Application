@@ -375,6 +375,189 @@ def fetch_access_data(db_path):
             except Exception as rm_err:
                 print(f"Warning: Could not remove temporary file {temp_path}: {rm_err}")
 
+def fetch_database1_data(db_path):
+    """Fetches vehicle records directly from Database1 table in MS Access."""
+    temp_path = os.path.abspath("temp_db1_sync.accdb")
+    conn_path = db_path
+    if copy_locked_file(db_path, temp_path):
+        conn_path = temp_path
+
+    conn = None
+    cursor = None
+    try:
+        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={conn_path};ReadOnly=1;"
+        conn = pyodbc.connect(conn_str, autocommit=True)
+        cursor = conn.cursor()
+        
+        tables = [t.table_name.lower() for t in cursor.tables(tableType='TABLE')]
+        if 'database1' not in tables:
+            return []
+
+        cursor.execute("SELECT TOP 1 * FROM [Database1]")
+        cols = [col[0].lower() for col in cursor.description]
+        col_map = {name: i for i, name in enumerate(cols)}
+
+        def get_col(row, names):
+            for n in names:
+                if n in col_map:
+                    return row[col_map[n]]
+            return None
+
+        cursor.execute("SELECT * FROM [Database1] WHERE Interno IS NOT NULL;")
+        rows = cursor.fetchall()
+        
+        cars = []
+        for row in rows:
+            try:
+                raw_interno = get_col(row, ["interno", "indice", "id"])
+                if not raw_interno:
+                    continue
+                interno = str(raw_interno).strip()
+                cliente = str(get_col(row, ["cliente"]) or "").strip()
+                venditore = str(get_col(row, ["venditore"]) or "").strip()
+                raw_dt = get_col(row, ["data contratto", "datacontratto", "data"])
+                dt_val = parse_date_val(raw_dt)
+                modello = str(get_col(row, ["modello", "vettura", "descrizione", "testo3"]) or "").strip()
+                indirizzo = str(get_col(row, ["indirizzo"]) or "").strip()
+                residente_a = str(get_col(row, ["residente a", "residente", "città"]) or "").strip()
+                raw_fatt = get_col(row, ["data fatturazione ce", "datafatturazione"])
+                fatt_val = parse_date_val(raw_fatt)
+                testo3 = str(get_col(row, ["testo3", "note"]) or "").strip()
+                nota1 = str(get_col(row, ["nota1", "nota 1", "nota_1"]) or "").strip()
+                indice = str(get_col(row, ["indice"]) or interno).strip()
+
+                cars.append({
+                    "interno": interno,
+                    "indice": indice,
+                    "nota1": nota1,
+                    "cliente": cliente,
+                    "venditore": venditore,
+                    "data_contratto": dt_val.isoformat() if dt_val else None,
+                    "modello_vettura": modello,
+                    "indirizzo": indirizzo,
+                    "residente_a": residente_a,
+                    "data_fatturazione": fatt_val.isoformat() if fatt_val else None,
+                    "testo3": testo3
+                })
+            except Exception:
+                continue
+        return cars
+    except Exception as e:
+        print(f"[Database1 Fetch Notice] {e}", flush=True)
+        return []
+    finally:
+        if cursor:
+            try: cursor.close()
+            except Exception: pass
+        if conn:
+            try: conn.close()
+            except Exception: pass
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+
+def push_database1_cars_to_server(cars):
+    """Pushes Database1 vehicles directly to local Node server."""
+    if not cars:
+        return
+    try:
+        req_data = json.dumps({"cars": cars}).encode("utf-8")
+        local_url = "http://localhost:5000/api/sync/push-database1-cars"
+        req_local = urllib.request.Request(
+            local_url,
+            data=req_data,
+            headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
+        )
+        with urllib.request.urlopen(req_local, timeout=10) as resp:
+            print(f"[Database1 Local Sync] Successfully pushed {len(cars)} Database1 vehicles to Local Server! (HTTP {resp.status})", flush=True)
+    except Exception as err:
+        pass
+
+def append_contract_to_databaseclienti(db_path, contract_data):
+    """Appends a new contract record to MS Access DatabaseClienti by fetching all vehicle columns from Database1 for car interno."""
+    if not contract_data or not os.path.exists(db_path):
+        return False
+    conn = None
+    cursor = None
+    try:
+        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={db_path};ReadOnly=0;"
+        conn = pyodbc.connect(conn_str, autocommit=True)
+        cursor = conn.cursor()
+
+        # 1. Calculate next Indice
+        passed_indice = contract_data.get('indice')
+        if passed_indice:
+            next_indice = int(passed_indice)
+        else:
+            cursor.execute("SELECT MAX(Indice) FROM [DatabaseClienti];")
+            row = cursor.fetchone()
+            current_max = row[0] if (row and row[0]) else 37981
+            next_indice = int(current_max) + 1 if int(current_max) >= 37981 else 37982
+
+        # 2. Extract seller/buyer info
+        interno = str(contract_data.get('interno', ''))
+        nome = contract_data.get('acquirente_nome', '').strip()
+        cognome = contract_data.get('acquirente_cognome', '').strip()
+        telefono = contract_data.get('acquirente_telefono', '').strip()
+        full_name = f"{cognome} {nome}".strip().upper()
+
+        # 3. Fetch all vehicle row columns from Database1 for car interno
+        db1_dict = {}
+        try:
+            cursor.execute("SELECT * FROM [Database1] WHERE [Interno] = ? OR [Indice] = ?;", (interno, int(interno) if interno.isdigit() else 0))
+            db1_row = cursor.fetchone()
+            if db1_row:
+                db1_cols = [r.column_name for r in cursor.columns(table='Database1')]
+                db1_dict = dict(zip(db1_cols, db1_row))
+        except Exception as fetch_err:
+            print(f"[DatabaseClienti Fetch Warning] {fetch_err}", flush=True)
+
+        # 4. Insert full row into DatabaseClienti (excluding calculated auto column CodClientec)
+        insert_sql = """
+            INSERT INTO [DatabaseClienti] 
+            (Indice, Interno, Cliente, Telefono, [E-mail], [Nato a], [Nato a Prov], [Nato il], [Residente a], [indirizzo], Provincia, cap, [Cod fisc], [Solo Partita iva], Telefono2, [Num Civ], Testo5, Testo6, Testo13)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """
+        
+        try:
+            phone_val = float(telefono) if (telefono and telefono.replace('.', '').replace('+', '').isdigit()) else telefono
+        except Exception:
+            phone_val = telefono
+
+        cursor.execute(insert_sql, (
+            next_indice,
+            interno,
+            full_name,
+            phone_val,
+            db1_dict.get('E-mail'),
+            db1_dict.get('Nato a'),
+            db1_dict.get('Nato a Prov'),
+            db1_dict.get('Nato il'),
+            db1_dict.get('Residente a'),
+            db1_dict.get('indirizzo'),
+            db1_dict.get('Provincia'),
+            db1_dict.get('cap'),
+            db1_dict.get('Cod fisc'),
+            db1_dict.get('Solo Partita iva'),
+            db1_dict.get('Telefono2'),
+            db1_dict.get('Num Civ'),
+            db1_dict.get('Testo5'),
+            full_name,
+            db1_dict.get('Testo13')
+        ))
+        print(f"[DatabaseClienti Append SUCCESS] Appended full contract row to MS Access DatabaseClienti (Indice #{next_indice}, Cliente: {full_name})!", flush=True)
+        return True
+    except Exception as e:
+        print(f"[DatabaseClienti Append Error] {e}", flush=True)
+        return False
+    finally:
+        if cursor:
+            try: cursor.close()
+            except Exception: pass
+        if conn:
+            try: conn.close()
+            except Exception: pass
+
 def upsert_to_postgresql(data):
     """Inserts new or updates existing records in PostgreSQL and pushes to Cloud backend."""
     if not data:
@@ -695,6 +878,107 @@ def upsert_stock_usato_to_local_postgresql(items):
         if pg_conn:
             pg_conn.close()
 
+def fetch_tab_preventivi_esterni(db_path):
+    """Fetches tabPreventiviEsterni query with Indice, Marca, Modello, Rimborso, RataFZero, and Nota1."""
+    if not db_path or not os.path.exists(db_path):
+        return []
+
+    temp_path = os.path.abspath("temp_preventivi_sync.accdb")
+    conn_path = db_path
+    if copy_locked_file(db_path, temp_path):
+        conn_path = temp_path
+
+    conn = None
+    cursor = None
+    try:
+        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={conn_path};ReadOnly=1;"
+        conn = pyodbc.connect(conn_str, autocommit=True)
+        cursor = conn.cursor()
+        
+        sql = """
+        SELECT 
+            d.Indice, 
+            d.Marca, 
+            d.Modello, 
+            d.[Colore VN], 
+            d.TipoAppuntVendita, 
+            d.[contr amb],
+            d.[numero rate],
+            d.[importo rata],
+            mp.Nota1
+        FROM ([Database] d 
+        LEFT JOIN tblContrattiPredefiniti cp ON d.Indice = cp.Indice) 
+        LEFT JOIN tblModelliPredefiniti mp ON cp.IDModello = mp.IDModello 
+        WHERE d.TipoAppuntVendita Like '%ester%'
+        ORDER BY d.Indice DESC;
+        """
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        
+        cars = []
+        for r in rows:
+            try:
+                indice = str(r[0]).strip() if r[0] else None
+                if not indice:
+                    continue
+                marca = str(r[1]).strip() if r[1] else None
+                modello = str(r[2]).strip() if r[2] else None
+                colore_vn = str(r[3]).strip() if r[3] else None
+                tipo = str(r[4]).strip() if r[4] else None
+                
+                contr_amb = float(r[5]) if r[5] is not None else 0.0
+                num_rate = float(r[6]) if r[6] is not None and float(r[6]) > 0 else 36.0
+                importo_rata = float(r[7]) if r[7] is not None else 0.0
+                
+                rimborso = round(contr_amb / num_rate, 2) if num_rate > 0 else 0.0
+                rata_f_zero = round(importo_rata - rimborso, 2)
+                
+                nota1 = str(r[8]).strip() if r[8] else None
+
+                cars.append({
+                    "indice": indice,
+                    "marca": marca,
+                    "modello": modello,
+                    "colore_vn": colore_vn,
+                    "tipo_appunt_vendita": tipo,
+                    "rimborso": rimborso,
+                    "rata_f_zero": rata_f_zero,
+                    "nota1": nota1
+                })
+            except Exception:
+                continue
+        return cars
+    except Exception as e:
+        print(f"[tabPreventiviEsterni Fetch Notice] {e}", flush=True)
+        return []
+    finally:
+        if cursor:
+            try: cursor.close()
+            except Exception: pass
+        if conn:
+            try: conn.close()
+            except Exception: pass
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+
+def push_tab_preventivi_esterni_to_server(cars):
+    """Pushes tabPreventiviEsterni vehicles to Portale table on local server."""
+    if not cars:
+        return
+    try:
+        req_data = json.dumps({"cars": cars}).encode("utf-8")
+        local_url = "http://localhost:5000/api/portal/sync-preventivi-esterni"
+        req_local = urllib.request.Request(
+            local_url,
+            data=req_data,
+            headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
+        )
+        with urllib.request.urlopen(req_local, timeout=10) as resp:
+            print(f"[tabPreventiviEsterni Sync] Pushed {len(cars)} vehicles to Portale! (HTTP {resp.status})", flush=True)
+    except Exception as err:
+        pass
+
 def main():
     print("MS Access Backend Sync Service started.", flush=True)
     user_home = os.path.expanduser("~")
@@ -714,6 +998,8 @@ def main():
         try:
             data = None
             stock_data = None
+            db1_data = None
+            portale_data = None
             for path in candidate_paths:
                 if os.path.exists(path):
                     is_server = "192.168.12.250" in path or path.startswith("Z:")
@@ -721,7 +1007,12 @@ def main():
                     print(f"[{tag}] Connected to Access DB at: {path}", flush=True)
                     data = fetch_access_data(path)
                     stock_data = fetch_stock_usato_data(path)
-                    if data or stock_data:
+                    db1_data = fetch_database1_data(path)
+                    try:
+                        portale_data = fetch_tab_preventivi_esterni(path)
+                    except Exception as pe:
+                        print(f"[tabPreventiviEsterni Safe Notice] {pe}", flush=True)
+                    if data or stock_data or db1_data or portale_data:
                         break
                                 
             if data:
@@ -732,6 +1023,14 @@ def main():
                 print(f"[StockUsato] Read {len(stock_data)} vehicles from Access DB. Syncing...", flush=True)
                 upsert_stock_usato_to_local_postgresql(stock_data)
                 push_stock_usato_to_render(stock_data)
+
+            if db1_data:
+                print(f"[Database1] Read {len(db1_data)} vehicles from Access DB. Syncing...", flush=True)
+                push_database1_cars_to_server(db1_data)
+
+            if portale_data:
+                print(f"[tabPreventiviEsterni] Read {len(portale_data)} vehicles for Portale. Syncing...", flush=True)
+                push_tab_preventivi_esterni_to_server(portale_data)
 
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)

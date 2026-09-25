@@ -317,6 +317,20 @@ export default function AdminDashboard({ navigation, route }) {
               </View>
             </TouchableOpacity>
 
+
+
+            {/* Button: Portale */}
+            <TouchableOpacity
+              style={[styles.clay3DButton, { backgroundColor: '#0F172A', borderColor: '#38BDF8', borderWidth: 1.5 }]}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('PortalList', { user, token })}
+            >
+              <View style={styles.clayButtonInner}>
+                <Text style={styles.clayButtonEmoji}>📋</Text>
+                <Text style={[styles.clayButtonText, { color: '#38BDF8' }]}>Portale</Text>
+              </View>
+            </TouchableOpacity>
+
             {/* Button 3: Chat Ufficio */}
             <TouchableOpacity
               style={[styles.clay3DButton, styles.clay3DButtonDarker]}

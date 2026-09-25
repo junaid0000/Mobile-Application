@@ -18,9 +18,19 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.h
 
 import axios from 'axios';
 
-// Connect to local backend server in DEV mode (localhost:5000), or Render in production
-const LOCAL_BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:5000' : `http://${host}:5000`;
-export const BASE_URL = __DEV__ ? LOCAL_BACKEND_URL : PROD_BACKEND_URL;
+const isLocalWeb = typeof window !== 'undefined' && (
+  window.location?.hostname === 'localhost' ||
+  window.location?.hostname === '127.0.0.1' ||
+  window.location?.hostname?.startsWith('192.168.') ||
+  window.location?.hostname?.startsWith('10.') ||
+  window.location?.hostname?.startsWith('172.')
+);
+
+const LOCAL_BACKEND_URL = Platform.OS === 'web'
+  ? `http://${(typeof window !== 'undefined' && window.location?.hostname) || 'localhost'}:5000`
+  : `http://${host}:5000`;
+
+export const BASE_URL = (__DEV__ || isLocalWeb) ? LOCAL_BACKEND_URL : PROD_BACKEND_URL;
 
 // Configure default axios headers
 axios.defaults.headers.common['bypass-tunnel-reminder'] = 'true';

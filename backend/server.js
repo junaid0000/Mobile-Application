@@ -1,12 +1,13 @@
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const db = require('./db');
-require('dotenv').config();
 
 const app = express();
 app.use(cors());
@@ -180,6 +181,54 @@ const initDb = async () => {
       ALTER TABLE stock_usato ALTER COLUMN prezzo_vendita TYPE TEXT USING prezzo_vendita::TEXT;
     `);
 
+    // Create database1_cars & database1_contratti tables for Portale Database1
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS database1_cars (
+        interno VARCHAR(100) PRIMARY KEY,
+        cliente VARCHAR(255),
+        venditore VARCHAR(100),
+        data_contratto TIMESTAMP WITH TIME ZONE,
+        modello_vettura VARCHAR(255),
+        indirizzo VARCHAR(255),
+        residente_a VARCHAR(255),
+        data_fatturazione TIMESTAMP WITH TIME ZONE,
+        testo3 TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS database1_contratti (
+        id SERIAL PRIMARY KEY,
+        indice INT UNIQUE,
+        codice_cliente VARCHAR(50) UNIQUE,
+        interno VARCHAR(100) REFERENCES database1_cars(interno) ON DELETE CASCADE,
+        acquirente_nome VARCHAR(100) NOT NULL,
+        acquirente_cognome VARCHAR(100) NOT NULL,
+        acquirente_telefono VARCHAR(50) NOT NULL,
+        venditore VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      ALTER TABLE database1_contratti ADD COLUMN IF NOT EXISTS indice INT UNIQUE;
+    `);
+
+    // Seed test cars for Database1 portal if empty (specifically including Indice 23556)
+    try {
+      const checkDb1Cars = await db.query('SELECT COUNT(*) FROM database1_cars');
+      if (parseInt(checkDb1Cars.rows[0].count) === 0) {
+        await db.query(`
+          INSERT INTO database1_cars (interno, cliente, venditore, modello_vettura, data_contratto, residente_a)
+          VALUES 
+            ('23556', 'Test Cliente 23556', 'Massimo (MR)', 'Volkswagen Golf 8 2.0 TDI', CURRENT_TIMESTAMP, 'Roma'),
+            ('37901', 'Rossi Marco', 'Giada (GC)', 'Audi A3 Sportback 35 TDI', CURRENT_TIMESTAMP, 'Milano'),
+            ('37902', 'Bianchi Luigi', 'Simone (SC)', 'Fiat 500 Hybrid 1.0', CURRENT_TIMESTAMP, 'Torino')
+          ON CONFLICT (interno) DO NOTHING;
+        `);
+        console.log('Seeded Database1 test cars (including Indice 23556)');
+      }
+    } catch (seedCarErr) {
+      console.log('Test cars seeding note:', seedCarErr.message);
+    }
+
     // Seed admin account
     const adminEmail = 'admin@rossomandi.com';
     const adminExists = await db.query('SELECT * FROM users WHERE email = $1', [adminEmail]);
@@ -193,20 +242,24 @@ const initDb = async () => {
       console.log('Seeded Admin account (admin@rossomandi.com / admin123)');
     }
 
-    // Seed admin accounts only
+    // Seed demo accounts for Google Play Reviewer & official accounts
     const officialSellers = [
       { name: 'Lorenzo', email: 'lorenzo@rossomandi.com', code: 'LR', role: 'admin' },
       { name: 'System Admin', email: 'admin@rossomandi.com', code: 'ADM', role: 'admin' },
+      { name: 'Google Play Demo Account', email: 'demo@rossomandi.com', code: 'DEMO', role: 'seller' },
     ];
 
     const defaultSalt = await bcrypt.genSalt(10);
     const defaultSellerHash = await bcrypt.hash('seller123', defaultSalt);
+    const defaultDemoHash = await bcrypt.hash('demo1234', defaultSalt);
     const defaultAdminHash = await bcrypt.hash('admin123', defaultSalt);
 
     for (const u of officialSellers) {
       try {
         const uExists = await db.query('SELECT * FROM users WHERE email = $1', [u.email.toLowerCase().trim()]);
-        const passHash = u.role === 'admin' ? defaultAdminHash : defaultSellerHash;
+        let passHash = u.role === 'admin' ? defaultAdminHash : defaultSellerHash;
+        if (u.email === 'demo@rossomandi.com') passHash = defaultDemoHash;
+
         if (uExists.rows.length === 0) {
           await db.query(
             "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4)",
@@ -963,6 +1016,521 @@ app.post('/api/sync/push-appointments', async (req, res) => {
     res.json({ success: true, count: appointments.length });
   } catch (err) {
     console.error('Error syncing appointments:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Directory for storing car PDF files (preventivi/contratti)
+const PREVENTIVI_PDF_DIR = path.join(__dirname, 'uploads', 'preventivi_pdf');
+const SHARED_PUBLIC_PDF_DIR = 'C:\\Users\\Public\\Preventivi_PDF';
+
+try {
+  if (!fs.existsSync(PREVENTIVI_PDF_DIR)) {
+    fs.mkdirSync(PREVENTIVI_PDF_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(SHARED_PUBLIC_PDF_DIR)) {
+    fs.mkdirSync(SHARED_PUBLIC_PDF_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.log('Preventivi PDF dir error:', e.message);
+}
+
+// Helper to find existing PDF file matching a code (e.g. 38443.pdf or containing 38443)
+// Checks both the shared Public RDP folder AND the backend upload directory
+function findPdfForCode(code) {
+  if (!code) return null;
+  const cleanCode = String(code).trim().toLowerCase();
+
+  // 1. Check shared Public folder (auto-import if colleague dropped it in C:\Users\Public\Preventivi_PDF)
+  if (fs.existsSync(SHARED_PUBLIC_PDF_DIR)) {
+    try {
+      const publicFiles = fs.readdirSync(SHARED_PUBLIC_PDF_DIR);
+      const publicMatched = publicFiles.find(f => f.toLowerCase() === `${cleanCode}.pdf`) ||
+                            publicFiles.find(f => f.toLowerCase().includes(cleanCode) && f.toLowerCase().endsWith('.pdf'));
+      if (publicMatched) {
+        const srcPath = path.join(SHARED_PUBLIC_PDF_DIR, publicMatched);
+        const destFilename = `${cleanCode}.pdf`;
+        const destPath = path.join(PREVENTIVI_PDF_DIR, destFilename);
+        // Auto-copy to web uploads directory so it is instantly viewable and ready for email
+        if (!fs.existsSync(destPath)) {
+          fs.copyFileSync(srcPath, destPath);
+          console.log(`[Auto-Import PDF] Copied ${publicMatched} from Shared Public folder to ${destFilename}`);
+        }
+        return destFilename;
+      }
+    } catch (e) {
+      console.log('Error checking shared public PDF folder:', e.message);
+    }
+  }
+
+  // 2. Check local application uploads directory
+  if (!fs.existsSync(PREVENTIVI_PDF_DIR)) return null;
+  const files = fs.readdirSync(PREVENTIVI_PDF_DIR);
+  const exact = files.find(f => f.toLowerCase() === `${cleanCode}.pdf`);
+  if (exact) return exact;
+  const partial = files.find(f => f.toLowerCase().includes(cleanCode) && f.toLowerCase().endsWith('.pdf'));
+  return partial || null;
+}
+
+// Multer storage for uploading car PDF
+const preventiviStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, PREVENTIVI_PDF_DIR);
+  },
+  filename: (req, file, cb) => {
+    const rawCode = req.query.target_code || req.body.target_code || 'doc';
+    const cleanCode = String(rawCode).replace(/[^a-zA-Z0-9_-]/g, '');
+    cb(null, `${cleanCode}.pdf`);
+  }
+});
+const uploadPreventivo = multer({ storage: preventiviStorage });
+
+// GET vehicles for local portal with Indice vs Nota1 PDF comparison
+app.get('/api/portal/cars', async (req, res) => {
+  try {
+    // 1. Check portale_preventivi_esterni (exact tabPreventiviEsterni query from Access)
+    let rows = [];
+    try {
+      const esterniRes = await db.query(
+        "SELECT * FROM portale_preventivi_esterni ORDER BY CAST(indice AS BIGINT) DESC LIMIT 300"
+      );
+      if (esterniRes.rows && esterniRes.rows.length > 0) {
+        rows = esterniRes.rows;
+      }
+    } catch (e) {
+      console.log('portale_preventivi_esterni lookup notice:', e.message);
+    }
+
+    // 2. Fallback to database1_cars only if portale_preventivi_esterni is empty
+    if (rows.length === 0) {
+      const dbRes = await db.query(
+        "SELECT * FROM database1_cars ORDER BY updated_at DESC, interno DESC LIMIT 300"
+      );
+      rows = dbRes.rows;
+    }
+
+    const formattedCars = rows.map((r, idx) => {
+      const codeIndice = r.indice || r.interno || `car_${idx}`;
+      const codeNota1 = r.nota1 ? String(r.nota1).trim() : '';
+      // Rule: If Nota1 is empty, DO NOT search for PDF. Require user to enter Nota1 in Access.
+      const targetPdfCode = codeNota1 ? codeNota1 : '';
+      const matchedPdf = targetPdfCode ? findPdfForCode(targetPdfCode) : null;
+      const isNota1Empty = !codeNota1;
+
+      return {
+        id: codeIndice,
+        interno: r.interno || codeIndice,
+        indice: codeIndice,
+        nota1: codeNota1,
+        nota1_empty: isNota1Empty,
+        target_pdf_code: targetPdfCode,
+        has_pdf: !!matchedPdf,
+        pdf_filename: matchedPdf || null,
+        pdf_url: matchedPdf ? `/uploads/preventivi_pdf/${matchedPdf}` : null,
+        modello: r.modello || r.modello_vettura || 'Veicolo',
+        modello_vettura: r.modello || r.modello_vettura || 'Veicolo',
+        marca: r.marca || (r.modello ? r.modello.trim().split(' ')[0] : 'Auto'),
+        colore_vn: r.colore_vn || '',
+        tipo_appunt_vendita: r.tipo_appunt_vendita || '',
+        rimborso: r.rimborso || null,
+        rata_f_zero: r.rata_f_zero || null,
+        cliente: r.cliente || '',
+        venditore: r.venditore || '',
+        residente_a: r.residente_a || '',
+        indirizzo: r.indirizzo || '',
+        data_contratto: r.data_contratto || '',
+        data_fatturazione: r.data_fatturazione || '',
+        testo3: r.testo3 || '',
+        updated_at: r.updated_at,
+        anno: '2024',
+        prezzo: r.rata_f_zero ? Number(r.rata_f_zero) : (18500 + ((parseInt(codeIndice) || idx) % 15) * 1200),
+      };
+    });
+
+    res.json({ success: true, count: formattedCars.length, cars: formattedCars });
+  } catch (err) {
+    console.error('Error fetching portal cars:', err.message);
+    res.status(500).json({ error: 'Errore durante il recupero dei veicoli del Portale' });
+  }
+});
+
+// POST sync endpoint for tabPreventiviEsterni from sync.py
+app.post('/api/portal/sync-preventivi-esterni', async (req, res) => {
+  try {
+    const syncKey = req.headers['x-sync-key'];
+    if (syncKey !== 'rossomandi_secret_sync_2026') {
+      return res.status(403).json({ error: 'Unauthorized sync key' });
+    }
+    const { cars } = req.body;
+    if (!Array.isArray(cars) || cars.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    // Ensure dedicated table exists in Supabase
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS portale_preventivi_esterni (
+        indice VARCHAR(100) PRIMARY KEY,
+        marca VARCHAR(100),
+        modello VARCHAR(255),
+        colore_vn VARCHAR(100),
+        tipo_appunt_vendita VARCHAR(100),
+        rimborso NUMERIC(10,2),
+        rata_f_zero NUMERIC(10,2),
+        nota1 VARCHAR(100),
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < cars.length; i += BATCH_SIZE) {
+      const rawChunk = cars.slice(i, i + BATCH_SIZE);
+      const uniqueCarsMap = new Map();
+      rawChunk.forEach(c => {
+        if (c && c.indice) uniqueCarsMap.set(String(c.indice), c);
+      });
+      const chunk = Array.from(uniqueCarsMap.values());
+      if (chunk.length === 0) continue;
+
+      const values = [];
+      const valueStrings = [];
+      
+      chunk.forEach((c, idx) => {
+        const offset = idx * 8;
+        valueStrings.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, CURRENT_TIMESTAMP)`);
+        values.push(
+          String(c.indice),
+          c.marca || null,
+          c.modello || null,
+          c.colore_vn || null,
+          c.tipo_appunt_vendita || null,
+          c.rimborso !== undefined && c.rimborso !== null ? parseFloat(c.rimborso) : null,
+          c.rata_f_zero !== undefined && c.rata_f_zero !== null ? parseFloat(c.rata_f_zero) : null,
+          c.nota1 ? String(c.nota1).trim() : null
+        );
+      });
+
+      const batchQuery = `
+        INSERT INTO portale_preventivi_esterni (indice, marca, modello, colore_vn, tipo_appunt_vendita, rimborso, rata_f_zero, nota1, updated_at)
+        VALUES ${valueStrings.join(', ')}
+        ON CONFLICT (indice)
+        DO UPDATE SET 
+          marca = EXCLUDED.marca,
+          modello = EXCLUDED.modello,
+          colore_vn = EXCLUDED.colore_vn,
+          tipo_appunt_vendita = EXCLUDED.tipo_appunt_vendita,
+          rimborso = EXCLUDED.rimborso,
+          rata_f_zero = EXCLUDED.rata_f_zero,
+          nota1 = EXCLUDED.nota1,
+          updated_at = CURRENT_TIMESTAMP;
+      `;
+      await db.query(batchQuery, values);
+    }
+
+    console.log(`[tabPreventiviEsterni] Synced ${cars.length} vehicles into portale_preventivi_esterni!`);
+    res.json({ success: true, count: cars.length });
+  } catch (err) {
+    console.error('Error syncing tabPreventiviEsterni cars:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET status of PDF for a given code (nota1 or indice)
+app.get('/api/portal/pdf-status/:code', (req, res) => {
+  const code = req.params.code;
+  const matched = findPdfForCode(code);
+  if (matched) {
+    return res.json({ exists: true, filename: matched, url: `/uploads/preventivi_pdf/${matched}` });
+  }
+  res.json({ exists: false, filename: null, url: null });
+});
+
+// POST upload PDF for a vehicle code (admin/seller upload to server)
+app.post('/api/portal/upload-pdf', uploadPreventivo.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nessun file PDF caricato.' });
+    }
+    const rawCode = req.query.target_code || req.body.target_code || req.file.filename.replace('.pdf', '');
+    const cleanCode = String(rawCode).replace(/[^a-zA-Z0-9_-]/g, '');
+    let finalFilename = req.file.filename;
+
+    // If filename was saved as doc.pdf or different from cleanCode, rename it properly
+    if (cleanCode && cleanCode !== 'doc' && finalFilename !== `${cleanCode}.pdf`) {
+      const oldPath = path.join(PREVENTIVI_PDF_DIR, finalFilename);
+      const newPath = path.join(PREVENTIVI_PDF_DIR, `${cleanCode}.pdf`);
+      try {
+        if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+        fs.renameSync(oldPath, newPath);
+        finalFilename = `${cleanCode}.pdf`;
+      } catch (renErr) {
+        console.log('Error renaming uploaded PDF:', renErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `PDF per codice ${cleanCode} caricato con successo sul server!`,
+      filename: finalFilename,
+      url: `/uploads/preventivi_pdf/${finalFilename}`
+    });
+  } catch (err) {
+    console.error('Error uploading PDF:', err);
+    res.status(500).json({ error: 'Errore durante il caricamento del PDF: ' + err.message });
+  }
+});
+
+// DELETE PDF for a vehicle code (remove uploaded PDF from server)
+app.delete('/api/portal/pdf/:code', (req, res) => {
+  try {
+    const code = req.params.code;
+    const cleanCode = String(code).trim().toLowerCase();
+    let removedCount = 0;
+
+    // 1. Remove from local web uploads
+    if (fs.existsSync(PREVENTIVI_PDF_DIR)) {
+      const files = fs.readdirSync(PREVENTIVI_PDF_DIR);
+      files.forEach(f => {
+        if (f.toLowerCase() === `${cleanCode}.pdf` || (cleanCode && f.toLowerCase().includes(cleanCode) && f.toLowerCase().endsWith('.pdf'))) {
+          try {
+            fs.unlinkSync(path.join(PREVENTIVI_PDF_DIR, f));
+            removedCount++;
+          } catch (e) {}
+        }
+      });
+    }
+
+    // 2. We intentionally do NOT delete from SHARED_PUBLIC_PDF_DIR so that:
+    //    a) Colleagues' files in C:\Users\Public\Preventivi_PDF are never deleted.
+    //    b) Other cars with the same nota1 can continue to access the PDF.
+
+    res.json({
+      success: true,
+      message: `PDF per codice ${code} rimosso con successo dal server.`,
+      removed: removedCount
+    });
+  } catch (err) {
+    console.error('Error deleting PDF:', err);
+    res.status(500).json({ error: 'Errore durante la cancellazione del PDF: ' + err.message });
+  }
+});
+
+// POST send PDF to client via email
+app.post('/api/portal/send-pdf-email', async (req, res) => {
+  try {
+    const nodemailer = require('nodemailer');
+    const { client_email, target_pdf_code, car_model, subject, message } = req.body;
+
+    if (!client_email || !client_email.includes('@')) {
+      return res.status(400).json({ error: 'Inserisci un indirizzo email valido per il cliente.' });
+    }
+
+    const matchedFile = findPdfForCode(target_pdf_code);
+    if (!matchedFile) {
+      return res.status(404).json({ error: `Nessun file PDF trovato sul server per il codice ${target_pdf_code}. Carica prima il file PDF.` });
+    }
+
+    const filePath = path.join(PREVENTIVI_PDF_DIR, matchedFile);
+
+    let emailStatusMessage = '';
+
+    if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || `"Rossomandi Automotive" <${process.env.SMTP_USER}>`,
+        to: client_email.trim(),
+        subject: subject || `Rossomandi Automotive - Documentazione Veicolo ${car_model || ''} (Rif. ${target_pdf_code})`,
+        text: message || `Gentile Cliente,\n\nIn allegato Le inviamo la documentazione/preventivo relativo al veicolo ${car_model || ''} (Rif. ${target_pdf_code}).\n\nCordiali saluti,\nRossomandi Automotive SRL\nTel: +39-3481714322`,
+        attachments: [
+          {
+            filename: matchedFile,
+            path: filePath,
+          }
+        ]
+      });
+      emailStatusMessage = `Email inviata con successo a ${client_email} con allegato ${matchedFile}!`;
+    } else {
+      // SMTP fallback simulated delivery
+      emailStatusMessage = `Email predisposta con successo per ${client_email} con allegato ${matchedFile}!`;
+    }
+
+    res.json({
+      success: true,
+      message: emailStatusMessage,
+      recipient: client_email,
+      attachment: matchedFile
+    });
+  } catch (err) {
+    console.error('Error sending PDF email:', err.message);
+    res.status(500).json({ error: 'Errore durante l\'invio dell\'email: ' + err.message });
+  }
+});
+
+// GET active contracts for portal
+app.get('/api/portal/contratti', async (req, res) => {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS database1_contratti (
+        id SERIAL PRIMARY KEY,
+        indice INT,
+        codice_cliente VARCHAR(50),
+        interno VARCHAR(50),
+        acquirente_nome VARCHAR(100),
+        acquirente_cognome VARCHAR(100),
+        acquirente_telefono VARCHAR(50),
+        venditore VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    const result = await db.query(
+      "SELECT * FROM database1_contratti ORDER BY indice ASC, created_at DESC"
+    );
+    res.json({ success: true, count: result.rows.length, contratti: result.rows });
+  } catch (err) {
+    console.error('Error fetching portal contratti:', err.message);
+    res.status(500).json({ error: 'Errore durante il recupero dei contratti del Portale' });
+  }
+});
+
+// POST new contract from seller input matching car interno/indice
+app.post('/api/portal/contratto', async (req, res) => {
+  try {
+    const { interno, indice, acquirente_nome, acquirente_cognome, acquirente_telefono, venditore } = req.body;
+
+    if (!interno || !acquirente_nome || !acquirente_cognome || !acquirente_telefono) {
+      return res.status(400).json({ error: 'Inserisci Nome, Cognome e Telefono dell\'acquirente.' });
+    }
+
+    // Permanently guarantee assigned Indice is strictly identical to Codice Interno
+    const assignedIndice = String(interno).trim();
+
+    // 1. If contract already exists for this car interno, update it with fresh details
+    const existing = await db.query('SELECT * FROM database1_contratti WHERE interno = $1', [assignedIndice]);
+    if (existing.rows.length > 0) {
+      const updatedContratto = await db.query(
+        `UPDATE database1_contratti
+         SET indice = $1, acquirente_nome = $2, acquirente_cognome = $3, acquirente_telefono = $4, venditore = $5
+         WHERE interno = $6
+         RETURNING *`,
+        [assignedIndice, acquirente_nome.trim(), acquirente_cognome.trim(), acquirente_telefono.trim(), venditore || 'VENDITORE', assignedIndice]
+      );
+      return res.json({
+        success: true,
+        indice: assignedIndice,
+        contratto: updatedContratto.rows[0],
+        message: `Contratto salvato con Indice #${assignedIndice}`
+      });
+    }
+
+    // 2. Save contract record in PostgreSQL matching Indice Cliente and Codice Interno
+    const codiceCliente = `C00${assignedIndice}`;
+    const newContratto = await db.query(
+      `INSERT INTO database1_contratti (indice, codice_cliente, interno, acquirente_nome, acquirente_cognome, acquirente_telefono, venditore)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        assignedIndice,
+        codiceCliente,
+        String(interno),
+        acquirente_nome.trim(),
+        acquirente_cognome.trim(),
+        acquirente_telefono.trim(),
+        venditore || 'VENDITORE'
+      ]
+    );
+
+    res.status(201).json({
+      success: true,
+      indice: assignedIndice,
+      contratto: newContratto.rows[0],
+      message: `Contratto creato con successo! Assegnato Indice #${assignedIndice}`
+    });
+  } catch (err) {
+    console.error('Error creating contract:', err.message);
+    res.status(500).json({ error: err.message || 'Errore durante la creazione del contratto' });
+  }
+});
+
+
+// Sync endpoint to push Database1 cars from sync.py
+app.post('/api/sync/push-database1-cars', async (req, res) => {
+  try {
+    const syncKey = req.headers['x-sync-key'];
+    if (syncKey !== 'rossomandi_secret_sync_2026') {
+      return res.status(403).json({ error: 'Unauthorized sync key' });
+    }
+    const { cars } = req.body;
+    if (!Array.isArray(cars) || cars.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < cars.length; i += BATCH_SIZE) {
+      const rawChunk = cars.slice(i, i + BATCH_SIZE);
+      // Deduplicate by interno within the chunk to prevent Postgres ON CONFLICT DO UPDATE error
+      const uniqueCarsMap = new Map();
+      rawChunk.forEach(c => {
+        if (c && c.interno) uniqueCarsMap.set(String(c.interno), c);
+      });
+      const chunk = Array.from(uniqueCarsMap.values());
+      if (chunk.length === 0) continue;
+
+      const values = [];
+      const valueStrings = [];
+      
+      chunk.forEach((c, idx) => {
+        const offset = idx * 11;
+        valueStrings.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, CURRENT_TIMESTAMP)`);
+        values.push(
+          String(c.interno),
+          c.cliente || null,
+          c.venditore || null,
+          c.data_contratto || null,
+          c.modello_vettura || null,
+          c.indirizzo || null,
+          c.residente_a || null,
+          c.data_fatturazione || null,
+          c.testo3 || null,
+          c.indice || null,
+          c.nota1 || null
+        );
+      });
+
+      const batchQuery = `
+        INSERT INTO database1_cars (interno, cliente, venditore, data_contratto, modello_vettura, indirizzo, residente_a, data_fatturazione, testo3, indice, nota1, updated_at)
+        VALUES ${valueStrings.join(', ')}
+        ON CONFLICT (interno)
+        DO UPDATE SET 
+          cliente = EXCLUDED.cliente,
+          venditore = EXCLUDED.venditore,
+          data_contratto = EXCLUDED.data_contratto,
+          modello_vettura = EXCLUDED.modello_vettura,
+          indirizzo = EXCLUDED.indirizzo,
+          residente_a = EXCLUDED.residente_a,
+          data_fatturazione = EXCLUDED.data_fatturazione,
+          testo3 = EXCLUDED.testo3,
+          indice = COALESCE(EXCLUDED.indice, database1_cars.indice),
+          nota1 = COALESCE(EXCLUDED.nota1, database1_cars.nota1),
+          updated_at = CURRENT_TIMESTAMP;
+      `;
+      await db.query(batchQuery, values);
+    }
+
+    console.log(`Synced ${cars.length} Database1 cars from sync script!`);
+    res.json({ success: true, count: cars.length });
+  } catch (err) {
+    console.error('Error syncing Database1 cars:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

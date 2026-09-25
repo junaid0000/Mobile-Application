@@ -11,6 +11,9 @@ import SellerDashboard from './screens/SellerDashboard';
 import AppointmentsScreen from './screens/AppointmentsScreen';
 import OfficeChatScreen from './screens/OfficeChatScreen';
 import StockUsatoScreen from './screens/StockUsatoScreen';
+import PortalListScreen from './screens/PortalListScreen';
+import PortalCarDetailScreen from './screens/PortalCarDetailScreen';
+import PortalContractFormScreen from './screens/PortalContractFormScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
 import * as Updates from 'expo-updates';
@@ -76,6 +79,23 @@ export default function App() {
           <Stack.Screen 
             name="StockUsato" 
             component={StockUsatoScreen} 
+            options={{ headerShown: false }} 
+          />
+
+          {/* Portale 3-Step Stack Entries */}
+          <Stack.Screen 
+            name="PortalList" 
+            component={PortalListScreen} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="PortalCarDetail" 
+            component={PortalCarDetailScreen} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="PortalContractForm" 
+            component={PortalContractFormScreen} 
             options={{ headerShown: false }} 
           />
         </Stack.Navigator>
