@@ -14,8 +14,12 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Root health check endpoint
-app.get('/', (req, res) => res.json({ status: 'ok', message: 'Rossomandi Backend Running' }));
+// Health check endpoint
+app.get('/api/health', (req, res) => res.json({ status: 'ok', message: 'Rossomandi Backend Running' }));
+
+// Static files for web application
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.use(express.static(PUBLIC_DIR));
 
 
 
@@ -31,7 +35,13 @@ try {
   console.log('Uploads directory initialization note:', e.message);
 }
 
-// Serve uploads statically
+// Serve uploads statically - disable caching for preventivi PDFs so updates are immediately visible
+app.use('/uploads/preventivi_pdf', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Database initialization & seeding
@@ -913,11 +923,8 @@ app.get('/api/seller/appointments', authenticateToken, async (req, res) => {
     }
 
     if (!includeHistory) {
-      // Admin: Current month (1st of month) to future
-      // Seller: Yesterday to future
-      const dateFilter = isAdminUser
-        ? "data_ora >= DATE_TRUNC('month', CURRENT_DATE)"
-        : "data_ora >= (CURRENT_DATE - INTERVAL '1 day')";
+      // Both Admin and Seller: Yesterday to future (yesterday + today + future)
+      const dateFilter = "data_ora >= (CURRENT_DATE - INTERVAL '1 day')";
 
       if (queryParams.length > 0) {
         queryText += ` AND (${dateFilter} OR data_ora IS NULL)`;
@@ -1023,6 +1030,8 @@ app.post('/api/sync/push-appointments', async (req, res) => {
 // Directory for storing car PDF files (preventivi/contratti)
 const PREVENTIVI_PDF_DIR = path.join(__dirname, 'uploads', 'preventivi_pdf');
 const SHARED_PUBLIC_PDF_DIR = 'C:\\Users\\Public\\Preventivi_PDF';
+const CAR_IMAGES_DIR = path.join(__dirname, 'uploads', 'cars');
+const SHARED_PUBLIC_CARS_DIR = 'C:\\Users\\Public\\Esterni photo';
 
 try {
   if (!fs.existsSync(PREVENTIVI_PDF_DIR)) {
@@ -1031,30 +1040,145 @@ try {
   if (!fs.existsSync(SHARED_PUBLIC_PDF_DIR)) {
     fs.mkdirSync(SHARED_PUBLIC_PDF_DIR, { recursive: true });
   }
+  if (!fs.existsSync(CAR_IMAGES_DIR)) {
+    fs.mkdirSync(CAR_IMAGES_DIR, { recursive: true });
+  }
+  // NOTE: We do NOT try to create the Esterni photo folder — it's managed by colleagues
 } catch (e) {
-  console.log('Preventivi PDF dir error:', e.message);
+  console.log('Uploads directory initialization note:', e.message);
 }
 
-// Helper to find existing PDF file matching a code (e.g. 38443.pdf or containing 38443)
-// Checks both the shared Public RDP folder AND the backend upload directory
+// Helper to find matching car image by indice (e.g. 38442.jpg, 38442.png) or model name
+function findImageForCar(code, modello) {
+  if (!code && !modello) return null;
+  const cleanCode = code ? String(code).trim().toLowerCase() : '';
+  const cleanModel = modello ? String(modello).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+  const validExts = ['.jpg', '.jpeg', '.png', '.webp'];
+
+  // 1. Check shared Public folder (C:\Users\Public\Cars_Images)
+  if (fs.existsSync(SHARED_PUBLIC_CARS_DIR)) {
+    try {
+      const publicFiles = fs.readdirSync(SHARED_PUBLIC_CARS_DIR);
+      const matched = publicFiles.find(f => {
+        const lower = f.toLowerCase();
+        const hasExt = validExts.some(ext => lower.endsWith(ext));
+        if (!hasExt) return false;
+        const nameWithoutExt = lower.substring(0, lower.lastIndexOf('.'));
+        if (cleanCode && (nameWithoutExt === cleanCode || nameWithoutExt.startsWith(cleanCode))) return true;
+        if (cleanModel && nameWithoutExt.replace(/[^a-z0-9]/g, '').includes(cleanModel)) return true;
+        return false;
+      });
+
+      if (matched) {
+        const srcPath = path.join(SHARED_PUBLIC_CARS_DIR, matched);
+        const destPath = path.join(CAR_IMAGES_DIR, matched);
+        let needsCopy = !fs.existsSync(destPath);
+        if (!needsCopy) {
+          try {
+            const srcStat = fs.statSync(srcPath);
+            const destStat = fs.statSync(destPath);
+            if (srcStat.mtimeMs > destStat.mtimeMs || srcStat.size !== destStat.size) needsCopy = true;
+          } catch { needsCopy = true; }
+        }
+        if (needsCopy) {
+          fs.copyFileSync(srcPath, destPath);
+          console.log(`[Auto-Sync Car Image] Copied ${matched} to server uploads`);
+        }
+        return matched;
+      }
+    } catch (e) {
+      console.log('Error checking shared cars dir:', e.message);
+    }
+  }
+
+  // 2. Check local uploads/cars
+  if (fs.existsSync(CAR_IMAGES_DIR)) {
+    try {
+      const localFiles = fs.readdirSync(CAR_IMAGES_DIR);
+      const matched = localFiles.find(f => {
+        const lower = f.toLowerCase();
+        const hasExt = validExts.some(ext => lower.endsWith(ext));
+        if (!hasExt) return false;
+        const nameWithoutExt = lower.substring(0, lower.lastIndexOf('.'));
+        if (cleanCode && (nameWithoutExt === cleanCode || nameWithoutExt.startsWith(cleanCode))) return true;
+        if (cleanModel && nameWithoutExt.replace(/[^a-z0-9]/g, '').includes(cleanModel)) return true;
+        return false;
+      });
+      if (matched) return matched;
+    } catch (e) {}
+  }
+  return null;
+}
+
+// Helper to find existing PDF file matching a code (e.g. 38442.pdf or containing 38442)
+// Checks both the shared Public RDP folder AND the backend upload directory.
+// Rules:
+// 1. If multiple files match (e.g. 38442.pdf and 38442 (1).pdf), always selects the NEWEST (most recently modified).
+// 2. If the file in C:\Users\Public\Preventivi_PDF was updated/replaced, it automatically updates the web server copy!
 function findPdfForCode(code) {
   if (!code) return null;
   const cleanCode = String(code).trim().toLowerCase();
 
-  // 1. Check shared Public folder (auto-import if colleague dropped it in C:\Users\Public\Preventivi_PDF)
+  // 1. Check shared Public folder (auto-import and auto-update from C:\Users\Public\Preventivi_PDF)
   if (fs.existsSync(SHARED_PUBLIC_PDF_DIR)) {
     try {
       const publicFiles = fs.readdirSync(SHARED_PUBLIC_PDF_DIR);
-      const publicMatched = publicFiles.find(f => f.toLowerCase() === `${cleanCode}.pdf`) ||
-                            publicFiles.find(f => f.toLowerCase().includes(cleanCode) && f.toLowerCase().endsWith('.pdf'));
-      if (publicMatched) {
-        const srcPath = path.join(SHARED_PUBLIC_PDF_DIR, publicMatched);
+      // Find all matching PDF files for this code
+      const matchingPublic = publicFiles
+        .filter(f => {
+          const lower = f.toLowerCase();
+          return lower.endsWith('.pdf') && (
+            lower === `${cleanCode}.pdf` ||
+            lower.startsWith(`${cleanCode}`) ||
+            lower.includes(cleanCode)
+          );
+        })
+        .map(f => {
+          try {
+            const stat = fs.statSync(path.join(SHARED_PUBLIC_PDF_DIR, f));
+            return {
+              filename: f,
+              mtimeMs: stat.mtimeMs,
+              size: stat.size,
+              isExact: f.toLowerCase() === `${cleanCode}.pdf`
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          // If one is exact and modified around the same time, prefer exact; otherwise prefer the latest modified time
+          if (a.isExact && !b.isExact && (a.mtimeMs >= b.mtimeMs - 5000)) return -1;
+          if (!a.isExact && b.isExact && (b.mtimeMs >= a.mtimeMs - 5000)) return 1;
+          return b.mtimeMs - a.mtimeMs;
+        });
+
+      if (matchingPublic.length > 0) {
+        const bestMatch = matchingPublic[0];
+        const srcPath = path.join(SHARED_PUBLIC_PDF_DIR, bestMatch.filename);
         const destFilename = `${cleanCode}.pdf`;
         const destPath = path.join(PREVENTIVI_PDF_DIR, destFilename);
-        // Auto-copy to web uploads directory so it is instantly viewable and ready for email
+
+        // Check if destination needs to be copied or updated
+        let needsUpdate = false;
         if (!fs.existsSync(destPath)) {
+          needsUpdate = true;
+        } else {
+          try {
+            const destStat = fs.statSync(destPath);
+            // If the source file in Public was modified more recently or size differs, overwrite with new version!
+            if (bestMatch.mtimeMs > destStat.mtimeMs || bestMatch.size !== destStat.size) {
+              needsUpdate = true;
+            }
+          } catch {
+            needsUpdate = true;
+          }
+        }
+
+        if (needsUpdate) {
           fs.copyFileSync(srcPath, destPath);
-          console.log(`[Auto-Import PDF] Copied ${publicMatched} from Shared Public folder to ${destFilename}`);
+          console.log(`[Auto-Sync PDF] Updated ${destFilename} from Shared Public folder (Source: ${bestMatch.filename}, size: ${bestMatch.size} bytes)`);
         }
         return destFilename;
       }
@@ -1065,11 +1189,35 @@ function findPdfForCode(code) {
 
   // 2. Check local application uploads directory
   if (!fs.existsSync(PREVENTIVI_PDF_DIR)) return null;
-  const files = fs.readdirSync(PREVENTIVI_PDF_DIR);
-  const exact = files.find(f => f.toLowerCase() === `${cleanCode}.pdf`);
-  if (exact) return exact;
-  const partial = files.find(f => f.toLowerCase().includes(cleanCode) && f.toLowerCase().endsWith('.pdf'));
-  return partial || null;
+  try {
+    const files = fs.readdirSync(PREVENTIVI_PDF_DIR);
+    const localMatches = files
+      .filter(f => {
+        const lower = f.toLowerCase();
+        return lower.endsWith('.pdf') && (
+          lower === `${cleanCode}.pdf` ||
+          lower.startsWith(`${cleanCode}`) ||
+          lower.includes(cleanCode)
+        );
+      })
+      .map(f => {
+        try {
+          const stat = fs.statSync(path.join(PREVENTIVI_PDF_DIR, f));
+          return { filename: f, mtimeMs: stat.mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    if (localMatches.length > 0) {
+      return localMatches[0].filename;
+    }
+  } catch (e) {
+    console.log('Error reading local uploads dir:', e.message);
+  }
+  return null;
 }
 
 // Multer storage for uploading car PDF
@@ -1117,6 +1265,8 @@ app.get('/api/portal/cars', async (req, res) => {
       const matchedPdf = targetPdfCode ? findPdfForCode(targetPdfCode) : null;
       const isNota1Empty = !codeNota1;
 
+      const matchedImage = findImageForCar(codeIndice, r.modello || r.modello_vettura);
+
       return {
         id: codeIndice,
         interno: r.interno || codeIndice,
@@ -1127,10 +1277,12 @@ app.get('/api/portal/cars', async (req, res) => {
         has_pdf: !!matchedPdf,
         pdf_filename: matchedPdf || null,
         pdf_url: matchedPdf ? `/uploads/preventivi_pdf/${matchedPdf}` : null,
+        image_url: matchedImage ? `/uploads/cars/${matchedImage}` : (r.image_url || null),
         modello: r.modello || r.modello_vettura || 'Veicolo',
         modello_vettura: r.modello || r.modello_vettura || 'Veicolo',
         marca: r.marca || (r.modello ? r.modello.trim().split(' ')[0] : 'Auto'),
         colore_vn: r.colore_vn || '',
+        km: r.km || r.chilometri || '',
         tipo_appunt_vendita: r.tipo_appunt_vendita || '',
         rimborso: r.rimborso || null,
         rata_f_zero: r.rata_f_zero || null,
@@ -1239,9 +1391,24 @@ app.get('/api/portal/pdf-status/:code', (req, res) => {
   const code = req.params.code;
   const matched = findPdfForCode(code);
   if (matched) {
-    return res.json({ exists: true, filename: matched, url: `/uploads/preventivi_pdf/${matched}` });
+    return res.json({ exists: true, filename: matched, url: `/uploads/preventivi_pdf/${matched}?v=${Date.now()}` });
   }
   res.json({ exists: false, filename: null, url: null });
+});
+
+// GET direct streaming of PDF with no-cache headers
+app.get('/api/portal/pdf/:code', (req, res) => {
+  const code = req.params.code;
+  const matched = findPdfForCode(code);
+  if (!matched) {
+    return res.status(404).send('PDF non trovato sul server.');
+  }
+  const filePath = path.join(PREVENTIVI_PDF_DIR, matched);
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.sendFile(filePath);
 });
 
 // POST upload PDF for a vehicle code (admin/seller upload to server)
@@ -1887,6 +2054,21 @@ app.delete('/api/admin/users/:id', authenticateToken, isAdmin, async (req, res) 
     console.error('Error deleting user:', err.message);
     res.status(500).json({ error: err.message || 'Errore durante l\'eliminazione dell\'utente' });
   }
+});
+
+// Single Page Application fallback for web navigation
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    return next();
+  }
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+    return next();
+  }
+  const indexPath = path.join(PUBLIC_DIR, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.json({ status: 'ok', message: 'Rossomandi Backend Running' });
 });
 
 const PORT = process.env.PORT || 5000;

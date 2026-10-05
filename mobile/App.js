@@ -11,9 +11,11 @@ import SellerDashboard from './screens/SellerDashboard';
 import AppointmentsScreen from './screens/AppointmentsScreen';
 import OfficeChatScreen from './screens/OfficeChatScreen';
 import StockUsatoScreen from './screens/StockUsatoScreen';
+import PortalHubScreen from './screens/PortalHubScreen';
 import PortalListScreen from './screens/PortalListScreen';
 import PortalCarDetailScreen from './screens/PortalCarDetailScreen';
-import PortalContractFormScreen from './screens/PortalContractFormScreen';
+import PortalShowcaseScreen from './screens/PortalShowcaseScreen';
+import PortalShowcaseDetailScreen from './screens/PortalShowcaseDetailScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
 import * as Updates from 'expo-updates';
@@ -82,7 +84,12 @@ export default function App() {
             options={{ headerShown: false }} 
           />
 
-          {/* Portale 3-Step Stack Entries */}
+          {/* Portale Hub & Sub-screens */}
+          <Stack.Screen 
+            name="PortalHub" 
+            component={PortalHubScreen} 
+            options={{ headerShown: false }} 
+          />
           <Stack.Screen 
             name="PortalList" 
             component={PortalListScreen} 
@@ -94,8 +101,13 @@ export default function App() {
             options={{ headerShown: false }} 
           />
           <Stack.Screen 
-            name="PortalContractForm" 
-            component={PortalContractFormScreen} 
+            name="PortalShowcase" 
+            component={PortalShowcaseScreen} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="PortalShowcaseDetail" 
+            component={PortalShowcaseDetailScreen} 
             options={{ headerShown: false }} 
           />
         </Stack.Navigator>

@@ -107,7 +107,8 @@ export default function PortalCarDetailScreen({ navigation, route }) {
       else Alert.alert('Avviso', msg);
       return;
     }
-    const fullUrl = `${BASE_URL}${pdfUrl}`;
+    const cacheBuster = pdfUrl.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
+    const fullUrl = `${BASE_URL}${pdfUrl}${cacheBuster}`;
     if (Platform.OS === 'web') {
       window.open(fullUrl, '_blank');
     } else {
@@ -235,9 +236,10 @@ export default function PortalCarDetailScreen({ navigation, route }) {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
-          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          activeOpacity={0.8}
         >
-          <Text style={styles.backButtonText}>‹ Lista Veicoli</Text>
+          <Text style={styles.backButtonIcon}>‹</Text>
+          <Text style={styles.backButtonText}>Torna alla Lista</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -247,7 +249,13 @@ export default function PortalCarDetailScreen({ navigation, route }) {
             Indice #{codeIndice} • Nota1: {codeNota1 || 'N/A'}
           </Text>
         </View>
-        <View style={{ width: 60 }} />
+        <TouchableOpacity
+          style={styles.forwardButton}
+          onPress={() => navigation.navigate('PortalShowcase', { user, token })}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.forwardButtonText}>Vista Vetrina ›</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Scrollable Content */}
@@ -394,20 +402,38 @@ export default function PortalCarDetailScreen({ navigation, route }) {
                         <Text style={styles.deletePdfBtnText}>🗑️ Rimuovi PDF</Text>
                       )}
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.pdfActionBtn, styles.showcaseBtn]}
+                      activeOpacity={0.85}
+                      onPress={() => navigation.navigate('PortalShowcase', { user, token })}
+                    >
+                      <Text style={styles.showcaseBtnText}>Vista Vetrina</Text>
+                    </TouchableOpacity>
                   </>
                 ) : (
-                  <TouchableOpacity
-                    style={[styles.pdfActionBtn, styles.uploadPdfBtn]}
-                    activeOpacity={0.85}
-                    onPress={handleUploadClick}
-                    disabled={uploading}
-                  >
-                    {uploading ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.uploadPdfBtnText}>📤 Carica PDF da Computer / USB ({targetPdfCode}.pdf)</Text>
-                    )}
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity
+                      style={[styles.pdfActionBtn, styles.uploadPdfBtn]}
+                      activeOpacity={0.85}
+                      onPress={handleUploadClick}
+                      disabled={uploading}
+                    >
+                      {uploading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.uploadPdfBtnText}>📤 Carica PDF da Computer / USB ({targetPdfCode}.pdf)</Text>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.pdfActionBtn, styles.showcaseBtn]}
+                      activeOpacity={0.85}
+                      onPress={() => navigation.navigate('PortalShowcase', { user, token })}
+                    >
+                      <Text style={styles.showcaseBtnText}>Vista Vetrina</Text>
+                    </TouchableOpacity>
+                  </>
                 )}
               </View>
             </View>
@@ -467,19 +493,7 @@ export default function PortalCarDetailScreen({ navigation, route }) {
         </View>
       </ScrollView>
 
-      {/* Prominent Contratto Button Pinned at Bottom */}
-      <View style={styles.bottomBarContainer}>
-        <View style={styles.bottomBarInner}>
-          <TouchableOpacity
-            style={styles.contrattoButton}
-            activeOpacity={0.88}
-            onPress={() => navigation.navigate('PortalContractForm', { car, carContratto, user, token })}
-          >
-            <Text style={styles.contrattoButtonIcon}>📄</Text>
-            <Text style={styles.contrattoButtonText}>Compila Contratto Form</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+
 
       {/* ── Modal Invia Email al Cliente ─────────────────────────────── */}
       <Modal
@@ -589,12 +603,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#141824',
   },
   backButton: {
-    paddingRight: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#13223B',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E365D',
+  },
+  backButtonIcon: {
+    color: '#00E5FF',
+    fontSize: 20,
+    fontWeight: '800',
+    marginRight: 6,
+    marginTop: -2,
   },
   backButtonText: {
-    color: '#38BDF8',
-    fontSize: 15,
-    fontWeight: '600',
+    color: '#00E5FF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  forwardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#13223B',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E365D',
+  },
+  forwardButtonText: {
+    color: '#00E5FF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   headerTitle: {
     color: '#FFFFFF',
@@ -844,6 +887,19 @@ const styles = StyleSheet.create({
     color: '#EF4444',
     fontSize: 13,
     fontWeight: '700',
+  },
+  showcaseBtn: {
+    backgroundColor: '#8B5CF6',
+    borderWidth: 1,
+    borderColor: '#A78BFA',
+    flexBasis: '100%',
+    marginTop: 6,
+  },
+  showcaseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   sectionHeaderTitle: {
     color: '#F8FAFC',

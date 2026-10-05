@@ -193,9 +193,10 @@ export default function PortalContractFormScreen({ navigation, route }) {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
-          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          activeOpacity={0.8}
         >
-          <Text style={styles.backButtonText}>‹ Dettaglio Veicolo</Text>
+          <Text style={styles.backButtonIcon}>‹</Text>
+          <Text style={styles.backButtonText}>Torna ai Dettagli</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle}>Nuovo Contratto</Text>
@@ -333,12 +334,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#141824',
   },
   backButton: {
-    paddingRight: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#13223B',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E365D',
+  },
+  backButtonIcon: {
+    color: '#00E5FF',
+    fontSize: 20,
+    fontWeight: '800',
+    marginRight: 6,
+    marginTop: -2,
   },
   backButtonText: {
-    color: '#38BDF8',
-    fontSize: 15,
-    fontWeight: '600',
+    color: '#00E5FF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   headerTitle: {
     color: '#FFFFFF',

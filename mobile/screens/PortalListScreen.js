@@ -226,16 +226,17 @@ export default function PortalListScreen({ navigation, route }) {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
-          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          activeOpacity={0.8}
         >
-          <Text style={styles.backButtonText}>‹ Dashboard</Text>
+          <Text style={styles.backButtonIcon}>‹</Text>
+          <Text style={styles.backButtonText}>Torna al Portale</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle}>Portale Preventivi Esterni</Text>
           <Text style={styles.headerSubtitle}>tabPreventiviEsterni • Vista Foglio Excel / Access</Text>
         </View>
-        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-          <Text style={{ fontSize: 18, color: '#38BDF8' }}>🔄</Text>
+        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh} activeOpacity={0.8}>
+          <Text style={styles.refreshButtonIcon}>🔄</Text>
         </TouchableOpacity>
       </View>
 
@@ -272,6 +273,14 @@ export default function PortalListScreen({ navigation, route }) {
             <Text style={styles.statChipLabel}>Nota1 Mancante:</Text>
             <Text style={[styles.statChipValue, { color: '#F59E0B' }]}>{missingNota1Count}</Text>
           </View>
+          <TouchableOpacity
+            style={[styles.statChip, { backgroundColor: '#8B5CF6', borderColor: '#A78BFA' }]}
+            onPress={() => navigation.navigate('PortalShowcase', { user, token })}
+          >
+            <Text style={[styles.statChipValue, { color: '#FFFFFF', fontWeight: '800' }]}>
+              Vista Vetrina
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -331,12 +340,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   backButton: {
-    paddingRight: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#13223B',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E365D',
+  },
+  backButtonIcon: {
+    color: '#00E5FF',
+    fontSize: 20,
+    fontWeight: '800',
+    marginRight: 6,
+    marginTop: -2,
   },
   backButtonText: {
-    color: '#38BDF8',
-    fontSize: 15,
-    fontWeight: '600',
+    color: '#00E5FF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   headerTitle: {
     color: '#FFFFFF',
@@ -349,7 +372,17 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   refreshButton: {
-    padding: 6,
+    backgroundColor: '#13223B',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E365D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshButtonIcon: {
+    fontSize: 15,
   },
   topBarContainer: {
     paddingHorizontal: 16,

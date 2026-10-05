@@ -323,7 +323,7 @@ export default function AdminDashboard({ navigation, route }) {
             <TouchableOpacity
               style={[styles.clay3DButton, { backgroundColor: '#0F172A', borderColor: '#38BDF8', borderWidth: 1.5 }]}
               activeOpacity={0.85}
-              onPress={() => navigation.navigate('PortalList', { user, token })}
+              onPress={() => navigation.navigate('PortalHub', { user, token })}
             >
               <View style={styles.clayButtonInner}>
                 <Text style={styles.clayButtonEmoji}>📋</Text>
