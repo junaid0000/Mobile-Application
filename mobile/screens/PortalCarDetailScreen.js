@@ -101,18 +101,20 @@ export default function PortalCarDetailScreen({ navigation, route }) {
 
   // Handle viewing / downloading the PDF
   const handleOpenPdf = () => {
-    if (!pdfUrl) {
-      const msg = 'PDF non disponibile sul server.';
-      if (Platform.OS === 'web') alert(msg);
-      else Alert.alert('Avviso', msg);
-      return;
-    }
-    const cacheBuster = pdfUrl.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
-    const fullUrl = (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://'))
-      ? `${pdfUrl}${cacheBuster}`
-      : `${BASE_URL}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}${cacheBuster}`;
+    const rawUrl = pdfUrl || `${BASE_URL}/api/portal/pdf/${targetPdfCode}`;
+    const cacheBuster = rawUrl.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
+    const fullUrl = (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
+      ? `${rawUrl}${cacheBuster}`
+      : `${BASE_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}${cacheBuster}`;
     if (Platform.OS === 'web') {
-      window.open(fullUrl, '_blank');
+      try {
+        const win = window.open(fullUrl, '_blank');
+        if (!win || win.closed || typeof win.closed === 'undefined') {
+          window.location.href = fullUrl;
+        }
+      } catch (e) {
+        window.location.href = fullUrl;
+      }
     } else {
       Linking.openURL(fullUrl).catch(() => {
         Alert.alert('Errore', 'Impossibile aprire il link del PDF.');

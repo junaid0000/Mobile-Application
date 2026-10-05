@@ -147,13 +147,20 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
       else Alert.alert("Avviso", msg);
       return;
     }
-    const currentPdfUrl = pdfUrl || `/uploads/preventivi_pdf/${targetPdfCode}.pdf`;
+    const currentPdfUrl = (pdfUrl && (pdfUrl.startsWith("http://") || pdfUrl.startsWith("https://")))
+      ? pdfUrl
+      : `${BASE_URL}/api/portal/pdf/${targetPdfCode}`;
     const cacheBuster = currentPdfUrl.includes("?") ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
-    const fullUrl = (currentPdfUrl.startsWith("http://") || currentPdfUrl.startsWith("https://"))
-      ? `${currentPdfUrl}${cacheBuster}`
-      : `${BASE_URL}${currentPdfUrl.startsWith("/") ? "" : "/"}${currentPdfUrl}${cacheBuster}`;
+    const fullUrl = `${currentPdfUrl}${cacheBuster}`;
     if (Platform.OS === "web") {
-      window.open(fullUrl, "_blank");
+      try {
+        const win = window.open(fullUrl, "_blank");
+        if (!win || win.closed || typeof win.closed === "undefined") {
+          window.location.href = fullUrl;
+        }
+      } catch (e) {
+        window.location.href = fullUrl;
+      }
     } else {
       Linking.openURL(fullUrl).catch(() => {
         Alert.alert("Errore", "Impossibile aprire il file PDF.");
