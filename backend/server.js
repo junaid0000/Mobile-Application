@@ -9,6 +9,75 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const db = require('./db');
 
+// ── Supabase Cloud Storage ──────────────────────────────────────────────────
+const SUPABASE_URL = 'https://ngvcirlrsgqrzhgawubu.supabase.co';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ndmNpcmxyc2dxcnpoZ2F3dWJ1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc2MTUxMSwiZXhwIjoyMTA0MzM3NTExfQ.u8yLJCqgLJm7nBzjSC9we1RGFL3v94-S3Iq71xSBMGM';
+
+async function uploadToSupabase(bucket, filename, fileBuffer, contentType) {
+  if (!SUPABASE_SERVICE_KEY) return null;
+  try {
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${encodeURIComponent(filename)}`;
+    const res = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': contentType || 'application/octet-stream',
+        'x-upsert': 'true'
+      },
+      body: fileBuffer
+    });
+    if (res.ok || res.status === 200 || res.status === 201 || res.status === 409) {
+      return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(filename)}`;
+    }
+    const errText = await res.text().catch(() => '');
+    console.error(`[Supabase] Upload failed for ${filename}: ${res.status} ${errText}`);
+    return null;
+  } catch (e) {
+    console.error(`[Supabase] Upload error for ${filename}:`, e.message);
+    return null;
+  }
+}
+
+async function deleteFromSupabase(bucket, filename) {
+  if (!SUPABASE_SERVICE_KEY) return;
+  try {
+    const delUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}`;
+    await fetch(delUrl, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ prefixes: [filename] })
+    });
+  } catch (e) {
+    console.error(`[Supabase] Delete error for ${filename}:`, e.message);
+  }
+}
+
+async function storeCloudAsset(code, type, cloudUrl, filename, fileSize) {
+  try {
+    await db.query(
+      `INSERT INTO cloud_assets (code, type, filename, cloud_url, file_size, uploaded_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+       ON CONFLICT (code, type) DO UPDATE SET filename = $3, cloud_url = $4, file_size = $5, uploaded_at = CURRENT_TIMESTAMP`,
+      [String(code).toLowerCase(), type, filename || null, cloudUrl, fileSize || null]
+    );
+  } catch (e) { /* ignore */ }
+}
+
+async function getCloudAsset(code, type) {
+  try {
+    const r = await db.query(
+      `SELECT cloud_url, filename FROM cloud_assets WHERE code = $1 AND type = $2`,
+      [String(code).toLowerCase(), type]
+    );
+    return r.rows[0]?.cloud_url || null;
+  } catch (e) { return null; }
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -35,6 +104,22 @@ try {
   console.log('Uploads directory initialization note:', e.message);
 }
 
+// Directory for storing car PDF files and images
+const PREVENTIVI_PDF_DIR = path.join(__dirname, 'uploads', 'preventivi_pdf');
+const SHARED_PUBLIC_PDF_DIR = 'C:\\Users\\Public\\Preventivi_PDF';
+const CAR_IMAGES_DIR = path.join(__dirname, 'uploads', 'cars');
+const SHARED_PUBLIC_CARS_DIR = 'C:\\Users\\Public\\Esterni photo';
+
+try {
+  if (!fs.existsSync(PREVENTIVI_PDF_DIR)) fs.mkdirSync(PREVENTIVI_PDF_DIR, { recursive: true });
+  if (!fs.existsSync(SHARED_PUBLIC_PDF_DIR) && !process.env.VERCEL) {
+    try { fs.mkdirSync(SHARED_PUBLIC_PDF_DIR, { recursive: true }); } catch (e) {}
+  }
+  if (!fs.existsSync(CAR_IMAGES_DIR)) fs.mkdirSync(CAR_IMAGES_DIR, { recursive: true });
+} catch (e) {
+  console.log('Car assets directory initialization note:', e.message);
+}
+
 // Serve uploads statically - disable caching for preventivi PDFs so updates are immediately visible
 app.use('/uploads/preventivi_pdf', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -43,6 +128,29 @@ app.use('/uploads/preventivi_pdf', (req, res, next) => {
   next();
 });
 app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Fallback for car images if not found on local disk (redirects to Supabase Cloud Storage)
+app.get('/uploads/cars/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(CAR_IMAGES_DIR, filename);
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  return res.redirect(302, `${SUPABASE_URL}/storage/v1/object/public/car-images/${encodeURIComponent(filename)}`);
+});
+
+// Fallback for preventivi PDFs if not found on local disk (redirects to Supabase Cloud Storage)
+app.get('/uploads/preventivi_pdf/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(PREVENTIVI_PDF_DIR, filename);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    return res.sendFile(filePath);
+  }
+  return res.redirect(302, `${SUPABASE_URL}/storage/v1/object/public/preventivi-pdf/${encodeURIComponent(filename)}`);
+});
 
 // Database initialization & seeding
 const initDb = async () => {
@@ -281,6 +389,26 @@ const initDb = async () => {
         // Ignore duplicate code constraint safely
       }
     }
+
+    // Create cloud_assets table for Supabase Storage URL caching
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS cloud_assets (
+        code VARCHAR(200) NOT NULL,
+        type VARCHAR(20) NOT NULL,
+        filename VARCHAR(255),
+        cloud_url TEXT NOT NULL,
+        file_size BIGINT,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (code, type)
+      );
+    `);
+    await db.query(`
+      ALTER TABLE portale_preventivi_esterni 
+      ADD COLUMN IF NOT EXISTS image_url TEXT,
+      ADD COLUMN IF NOT EXISTS pdf_url TEXT,
+      ADD COLUMN IF NOT EXISTS pdf_filename VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS has_pdf BOOLEAN DEFAULT false;
+    `).catch(() => {});
 
     console.log('Database initialized successfully.');
   } catch (err) {
@@ -1027,25 +1155,76 @@ app.post('/api/sync/push-appointments', async (req, res) => {
   }
 });
 
-// Directory for storing car PDF files (preventivi/contratti)
-const PREVENTIVI_PDF_DIR = path.join(__dirname, 'uploads', 'preventivi_pdf');
-const SHARED_PUBLIC_PDF_DIR = 'C:\\Users\\Public\\Preventivi_PDF';
-const CAR_IMAGES_DIR = path.join(__dirname, 'uploads', 'cars');
-const SHARED_PUBLIC_CARS_DIR = 'C:\\Users\\Public\\Esterni photo';
+// Background auto-sync for local images & PDFs to Supabase
+let isSyncingAssets = false;
+async function syncLocalAssetsToCloud() {
+  if (isSyncingAssets) return;
+  if (!fs.existsSync(SHARED_PUBLIC_CARS_DIR) && !fs.existsSync(CAR_IMAGES_DIR)) return;
+  if (!SUPABASE_SERVICE_KEY) return;
 
-try {
-  if (!fs.existsSync(PREVENTIVI_PDF_DIR)) {
-    fs.mkdirSync(PREVENTIVI_PDF_DIR, { recursive: true });
+  isSyncingAssets = true;
+  try {
+    // 1. Sync Car Images from Esterni photo & local uploads/cars
+    const imageDirs = [SHARED_PUBLIC_CARS_DIR, CAR_IMAGES_DIR];
+    for (const dir of imageDirs) {
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        const lower = f.toLowerCase();
+        if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
+        const code = lower.substring(0, lower.lastIndexOf('.')).trim();
+        const existing = await getCloudAsset(code, 'image');
+        if (!existing) {
+          const filePath = path.join(dir, f);
+          const stat = fs.statSync(filePath);
+          const fileBuffer = fs.readFileSync(filePath);
+          const contentType = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
+          const cloudUrl = await uploadToSupabase('car-images', f, fileBuffer, contentType);
+          if (cloudUrl) {
+            await storeCloudAsset(code, 'image', cloudUrl, f, stat.size);
+            await db.query(`
+              UPDATE portale_preventivi_esterni 
+              SET image_url = $1 
+              WHERE LOWER(indice) = $2 OR LOWER(indice) = $3
+            `, [cloudUrl, code, `idx_${code}`]).catch(() => {});
+            console.log(`[Supabase Auto-Sync] Synced car image ${f} to cloud!`);
+          }
+        }
+      }
+    }
+
+    // 2. Sync Preventivi PDFs from Preventivi_PDF & local uploads/preventivi_pdf
+    const pdfDirs = [SHARED_PUBLIC_PDF_DIR, PREVENTIVI_PDF_DIR];
+    for (const dir of pdfDirs) {
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        const lower = f.toLowerCase();
+        if (!lower.endsWith('.pdf')) continue;
+        const code = lower.replace('.pdf', '').trim();
+        const existing = await getCloudAsset(code, 'pdf');
+        if (!existing) {
+          const filePath = path.join(dir, f);
+          const stat = fs.statSync(filePath);
+          const fileBuffer = fs.readFileSync(filePath);
+          const cloudUrl = await uploadToSupabase('preventivi-pdf', f, fileBuffer, 'application/pdf');
+          if (cloudUrl) {
+            await storeCloudAsset(code, 'pdf', cloudUrl, f, stat.size);
+            await db.query(`
+              UPDATE portale_preventivi_esterni 
+              SET has_pdf = true, pdf_filename = $1, pdf_url = $2 
+              WHERE LOWER(nota1) = $3 OR LOWER(indice) = $3
+            `, [f, cloudUrl, code]).catch(() => {});
+            console.log(`[Supabase Auto-Sync] Synced PDF ${f} to cloud!`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // quiet ignore
+  } finally {
+    isSyncingAssets = false;
   }
-  if (!fs.existsSync(SHARED_PUBLIC_PDF_DIR)) {
-    fs.mkdirSync(SHARED_PUBLIC_PDF_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(CAR_IMAGES_DIR)) {
-    fs.mkdirSync(CAR_IMAGES_DIR, { recursive: true });
-  }
-  // NOTE: We do NOT try to create the Esterni photo folder — it's managed by colleagues
-} catch (e) {
-  console.log('Uploads directory initialization note:', e.message);
 }
 
 // Helper to find matching car image by indice (e.g. 38442.jpg, 38442.png) or model name
@@ -1262,10 +1441,21 @@ app.get('/api/portal/cars', async (req, res) => {
       const codeNota1 = r.nota1 ? String(r.nota1).trim() : '';
       // Rule: If Nota1 is empty, DO NOT search for PDF. Require user to enter Nota1 in Access.
       const targetPdfCode = codeNota1 ? codeNota1 : '';
-      const matchedPdf = targetPdfCode ? findPdfForCode(targetPdfCode) : null;
       const isNota1Empty = !codeNota1;
 
-      const matchedImage = findImageForCar(codeIndice, r.modello || r.modello_vettura);
+      // PDF resolution: check local disk first, fallback to cloud database assets
+      const localMatchedPdf = targetPdfCode ? findPdfForCode(targetPdfCode) : null;
+      const hasPdf = Boolean(localMatchedPdf || r.has_pdf);
+      const pdfFilename = localMatchedPdf || r.pdf_filename || (hasPdf && targetPdfCode ? `${targetPdfCode}.pdf` : null);
+      const pdfUrl = localMatchedPdf 
+        ? `/uploads/preventivi_pdf/${localMatchedPdf}` 
+        : (r.pdf_url || (hasPdf && targetPdfCode ? `/uploads/preventivi_pdf/${targetPdfCode}.pdf` : null));
+
+      // Image resolution: check local disk first, fallback to cloud database assets
+      const localMatchedImage = findImageForCar(codeIndice, r.modello || r.modello_vettura);
+      const imageUrl = localMatchedImage 
+        ? `/uploads/cars/${localMatchedImage}` 
+        : (r.image_url || null);
 
       return {
         id: codeIndice,
@@ -1274,10 +1464,10 @@ app.get('/api/portal/cars', async (req, res) => {
         nota1: codeNota1,
         nota1_empty: isNota1Empty,
         target_pdf_code: targetPdfCode,
-        has_pdf: !!matchedPdf,
-        pdf_filename: matchedPdf || null,
-        pdf_url: matchedPdf ? `/uploads/preventivi_pdf/${matchedPdf}` : null,
-        image_url: matchedImage ? `/uploads/cars/${matchedImage}` : (r.image_url || null),
+        has_pdf: hasPdf,
+        pdf_filename: pdfFilename,
+        pdf_url: pdfUrl,
+        image_url: imageUrl,
         modello: r.modello || r.modello_vettura || 'Veicolo',
         modello_vettura: r.modello || r.modello_vettura || 'Veicolo',
         marca: r.marca || (r.modello ? r.modello.trim().split(' ')[0] : 'Auto'),
@@ -1387,32 +1577,71 @@ app.post('/api/portal/sync-preventivi-esterni', async (req, res) => {
 });
 
 // GET status of PDF for a given code (nota1 or indice)
-app.get('/api/portal/pdf-status/:code', (req, res) => {
+app.get('/api/portal/pdf-status/:code', async (req, res) => {
   const code = req.params.code;
+  const cleanCode = String(code).trim().toLowerCase();
+
+  // 1. Check local file
   const matched = findPdfForCode(code);
   if (matched) {
     return res.json({ exists: true, filename: matched, url: `/uploads/preventivi_pdf/${matched}?v=${Date.now()}` });
   }
+
+  // 2. Check cloud_assets in database
+  try {
+    const cloudAsset = await getCloudAsset(cleanCode, 'pdf');
+    if (cloudAsset) {
+      return res.json({ exists: true, filename: `${cleanCode}.pdf`, url: cloudAsset });
+    }
+    const dbCar = await db.query(
+      'SELECT pdf_filename, pdf_url FROM portale_preventivi_esterni WHERE (LOWER(nota1) = $1 OR LOWER(indice) = $1) AND has_pdf = true LIMIT 1',
+      [cleanCode]
+    );
+    if (dbCar.rows.length > 0 && dbCar.rows[0].pdf_url) {
+      return res.json({ exists: true, filename: dbCar.rows[0].pdf_filename || `${cleanCode}.pdf`, url: dbCar.rows[0].pdf_url });
+    }
+  } catch (e) {}
+
   res.json({ exists: false, filename: null, url: null });
 });
 
-// GET direct streaming of PDF with no-cache headers
-app.get('/api/portal/pdf/:code', (req, res) => {
+// GET direct streaming/viewing of PDF with no-cache headers
+app.get('/api/portal/pdf/:code', async (req, res) => {
   const code = req.params.code;
+  const cleanCode = String(code).trim().toLowerCase();
+
+  // 1. Local file streaming
   const matched = findPdfForCode(code);
-  if (!matched) {
-    return res.status(404).send('PDF non trovato sul server.');
+  if (matched) {
+    const filePath = path.join(PREVENTIVI_PDF_DIR, matched);
+    if (fs.existsSync(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Content-Type', 'application/pdf');
+      return res.sendFile(filePath);
+    }
   }
-  const filePath = path.join(PREVENTIVI_PDF_DIR, matched);
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.sendFile(filePath);
+
+  // 2. Cloud Supabase Storage redirect
+  try {
+    const cloudAsset = await getCloudAsset(cleanCode, 'pdf');
+    if (cloudAsset) return res.redirect(302, cloudAsset);
+
+    const dbCar = await db.query(
+      'SELECT pdf_url FROM portale_preventivi_esterni WHERE (LOWER(nota1) = $1 OR LOWER(indice) = $1) AND has_pdf = true LIMIT 1',
+      [cleanCode]
+    );
+    if (dbCar.rows.length > 0 && dbCar.rows[0].pdf_url) {
+      return res.redirect(302, dbCar.rows[0].pdf_url);
+    }
+  } catch (e) {}
+
+  return res.redirect(302, `${SUPABASE_URL}/storage/v1/object/public/preventivi-pdf/${encodeURIComponent(cleanCode)}.pdf`);
 });
 
-// POST upload PDF for a vehicle code (admin/seller upload to server)
-app.post('/api/portal/upload-pdf', uploadPreventivo.single('file'), (req, res) => {
+// POST upload PDF for a vehicle code (admin/seller upload to server & cloud)
+app.post('/api/portal/upload-pdf', uploadPreventivo.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Nessun file PDF caricato.' });
@@ -1427,10 +1656,29 @@ app.post('/api/portal/upload-pdf', uploadPreventivo.single('file'), (req, res) =
       const newPath = path.join(PREVENTIVI_PDF_DIR, `${cleanCode}.pdf`);
       try {
         if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-        fs.renameSync(oldPath, newPath);
-        finalFilename = `${cleanCode}.pdf`;
+        if (fs.existsSync(oldPath)) {
+          fs.renameSync(oldPath, newPath);
+          finalFilename = `${cleanCode}.pdf`;
+        }
       } catch (renErr) {
         console.log('Error renaming uploaded PDF:', renErr.message);
+      }
+    }
+
+    // Upload to Supabase Storage
+    let cloudUrl = null;
+    const finalFilePath = path.join(PREVENTIVI_PDF_DIR, finalFilename);
+    const fileBuffer = req.file.buffer || (fs.existsSync(finalFilePath) ? fs.readFileSync(finalFilePath) : null);
+    if (fileBuffer) {
+      cloudUrl = await uploadToSupabase('preventivi-pdf', finalFilename, fileBuffer, 'application/pdf');
+      if (cloudUrl) {
+        await storeCloudAsset(cleanCode.toLowerCase(), 'pdf', cloudUrl, finalFilename, fileBuffer.length);
+        await db.query(`
+          UPDATE portale_preventivi_esterni 
+          SET has_pdf = true, pdf_filename = $1, pdf_url = $2 
+          WHERE LOWER(nota1) = $3 OR LOWER(indice) = $3
+        `, [finalFilename, cloudUrl, cleanCode.toLowerCase()]).catch(() => {});
+        console.log(`[Supabase Upload] PDF ${finalFilename} stored in cloud!`);
       }
     }
 
@@ -1438,7 +1686,7 @@ app.post('/api/portal/upload-pdf', uploadPreventivo.single('file'), (req, res) =
       success: true,
       message: `PDF per codice ${cleanCode} caricato con successo sul server!`,
       filename: finalFilename,
-      url: `/uploads/preventivi_pdf/${finalFilename}`
+      url: cloudUrl || `/uploads/preventivi_pdf/${finalFilename}`
     });
   } catch (err) {
     console.error('Error uploading PDF:', err);
@@ -1446,8 +1694,8 @@ app.post('/api/portal/upload-pdf', uploadPreventivo.single('file'), (req, res) =
   }
 });
 
-// DELETE PDF for a vehicle code (remove uploaded PDF from server)
-app.delete('/api/portal/pdf/:code', (req, res) => {
+// DELETE PDF for a vehicle code (remove uploaded PDF from server & cloud)
+app.delete('/api/portal/pdf/:code', async (req, res) => {
   try {
     const code = req.params.code;
     const cleanCode = String(code).trim().toLowerCase();
@@ -1466,9 +1714,18 @@ app.delete('/api/portal/pdf/:code', (req, res) => {
       });
     }
 
-    // 2. We intentionally do NOT delete from SHARED_PUBLIC_PDF_DIR so that:
-    //    a) Colleagues' files in C:\Users\Public\Preventivi_PDF are never deleted.
-    //    b) Other cars with the same nota1 can continue to access the PDF.
+    // 2. Remove from Supabase Storage & DB
+    try {
+      await deleteFromSupabase('preventivi-pdf', `${cleanCode}.pdf`);
+      await db.query('DELETE FROM cloud_assets WHERE code = $1 AND type = $2', [cleanCode, 'pdf']);
+      await db.query(`
+        UPDATE portale_preventivi_esterni 
+        SET has_pdf = false, pdf_filename = null, pdf_url = null 
+        WHERE LOWER(nota1) = $1 OR LOWER(indice) = $1
+      `, [cleanCode]);
+    } catch (e) {
+      console.log('Error removing from Supabase:', e.message);
+    }
 
     res.json({
       success: true,
@@ -1491,12 +1748,32 @@ app.post('/api/portal/send-pdf-email', async (req, res) => {
       return res.status(400).json({ error: 'Inserisci un indirizzo email valido per il cliente.' });
     }
 
-    const matchedFile = findPdfForCode(target_pdf_code);
-    if (!matchedFile) {
-      return res.status(404).json({ error: `Nessun file PDF trovato sul server per il codice ${target_pdf_code}. Carica prima il file PDF.` });
+    const cleanCode = String(target_pdf_code || '').trim().toLowerCase();
+    let matchedFile = findPdfForCode(target_pdf_code);
+    let attachmentConfig = null;
+
+    if (matchedFile) {
+      const localFilePath = path.join(PREVENTIVI_PDF_DIR, matchedFile);
+      if (fs.existsSync(localFilePath)) {
+        attachmentConfig = {
+          filename: matchedFile,
+          path: localFilePath
+        };
+      }
     }
 
-    const filePath = path.join(PREVENTIVI_PDF_DIR, matchedFile);
+    // If local file not found on disk (e.g. running on Vercel), fetch from cloud
+    if (!attachmentConfig) {
+      let cloudUrl = await getCloudAsset(cleanCode, 'pdf');
+      if (!cloudUrl) {
+        cloudUrl = `${SUPABASE_URL}/storage/v1/object/public/preventivi-pdf/${encodeURIComponent(cleanCode)}.pdf`;
+      }
+      matchedFile = matchedFile || `${cleanCode}.pdf`;
+      attachmentConfig = {
+        filename: matchedFile,
+        path: cloudUrl
+      };
+    }
 
     let emailStatusMessage = '';
 
@@ -1519,16 +1796,10 @@ app.post('/api/portal/send-pdf-email', async (req, res) => {
         to: client_email.trim(),
         subject: subject || `Rossomandi Automotive - Documentazione Veicolo ${car_model || ''} (Rif. ${target_pdf_code})`,
         text: message || `Gentile Cliente,\n\nIn allegato Le inviamo la documentazione/preventivo relativo al veicolo ${car_model || ''} (Rif. ${target_pdf_code}).\n\nCordiali saluti,\nRossomandi Automotive SRL\nTel: +39-3481714322`,
-        attachments: [
-          {
-            filename: matchedFile,
-            path: filePath,
-          }
-        ]
+        attachments: [attachmentConfig]
       });
       emailStatusMessage = `Email inviata con successo a ${client_email} con allegato ${matchedFile}!`;
     } else {
-      // SMTP fallback simulated delivery
       emailStatusMessage = `Email predisposta con successo per ${client_email} con allegato ${matchedFile}!`;
     }
 
@@ -2073,7 +2344,12 @@ app.use((req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 if (!process.env.VERCEL) {
-  app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+    // Run background auto-sync for newly placed local car photos & PDFs
+    syncLocalAssetsToCloud();
+    setInterval(syncLocalAssetsToCloud, 30000);
+  });
 }
 
 module.exports = app;

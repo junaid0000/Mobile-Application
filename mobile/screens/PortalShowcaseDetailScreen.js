@@ -34,18 +34,19 @@ const BRAND_IMAGES = {
   BMW:        "https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=1200&q=80",
   TOYOTA:     "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
   FORD:       "https://images.unsplash.com/photo-1551830820-330a71b99659?auto=format&fit=crop&w=1200&q=80",
-  MG:         "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80",
+  KIA:        "https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=1200&q=80",
+  TOYOTA1:    "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
+  BYD:        "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80",
   DEFAULT:    "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80",
 };
-
-const RED_FERRARI_IMAGE = "https://images.unsplash.com/photo-1583121274602-3e2820c69888?auto=format&fit=crop&w=800&q=85";
 
 function getCarImage(item) {
   if (item?.image_url) {
     if (item.image_url.startsWith("http")) return item.image_url;
     return `${BASE_URL}${item.image_url.startsWith("/") ? "" : "/"}${item.image_url}`;
   }
-  return RED_FERRARI_IMAGE;
+  const brand = (item?.marca || "").toUpperCase().trim();
+  return BRAND_IMAGES[brand] || BRAND_IMAGES.DEFAULT;
 }
 
 function detectFuelType(item) {
@@ -112,9 +113,23 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
   const targetPdfCode = nota1 || indice;
   const [hasPdf, setHasPdf] = useState(Boolean(car?.has_pdf));
   const [pdfUrl, setPdfUrl] = useState(car?.pdf_url || `/uploads/preventivi_pdf/${targetPdfCode}.pdf`);
-  const [pdfFilename, setPdfFilename] = useState(`${targetPdfCode}.pdf`);
+  const [pdfFilename, setPdfFilename] = useState(car?.pdf_filename || `${targetPdfCode}.pdf`);
   const [uploading, setUploading] = useState(false);
   const [deletingPdf, setDeletingPdf] = useState(false);
+
+  // Auto-check PDF presence on server / cloud storage
+  useEffect(() => {
+    if (!targetPdfCode) return;
+    axios.get(`${BASE_URL}/api/portal/pdf-status/${targetPdfCode}`)
+      .then(res => {
+        if (res.data && res.data.exists) {
+          setHasPdf(true);
+          if (res.data.filename) setPdfFilename(res.data.filename);
+          if (res.data.url) setPdfUrl(res.data.url);
+        }
+      })
+      .catch(() => {});
+  }, [targetPdfCode]);
 
   // Email to Client modal state
   const [emailModalVisible, setEmailModalVisible] = useState(false);
@@ -134,7 +149,9 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
     }
     const currentPdfUrl = pdfUrl || `/uploads/preventivi_pdf/${targetPdfCode}.pdf`;
     const cacheBuster = currentPdfUrl.includes("?") ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
-    const fullUrl = `${BASE_URL}${currentPdfUrl}${cacheBuster}`;
+    const fullUrl = (currentPdfUrl.startsWith("http://") || currentPdfUrl.startsWith("https://"))
+      ? `${currentPdfUrl}${cacheBuster}`
+      : `${BASE_URL}${currentPdfUrl.startsWith("/") ? "" : "/"}${currentPdfUrl}${cacheBuster}`;
     if (Platform.OS === "web") {
       window.open(fullUrl, "_blank");
     } else {

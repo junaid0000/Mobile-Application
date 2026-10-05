@@ -108,7 +108,9 @@ export default function PortalCarDetailScreen({ navigation, route }) {
       return;
     }
     const cacheBuster = pdfUrl.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
-    const fullUrl = `${BASE_URL}${pdfUrl}${cacheBuster}`;
+    const fullUrl = (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://'))
+      ? `${pdfUrl}${cacheBuster}`
+      : `${BASE_URL}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}${cacheBuster}`;
     if (Platform.OS === 'web') {
       window.open(fullUrl, '_blank');
     } else {

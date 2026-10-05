@@ -22,15 +22,24 @@ import { BASE_URL } from "../config/apiConfig";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// ── HD Red Ferrari Test Image (Fixed fallback for all vehicles) ──
-const RED_FERRARI_IMAGE = "https://images.unsplash.com/photo-1583121274602-3e2820c69888?auto=format&fit=crop&w=800&q=85";
+// ── Professional Brand Fallback Images ──
+const BRAND_IMAGES = {
+  OPEL:       "https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&w=1200&q=80",
+  FIAT:       "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=1200&q=80",
+  KIA:        "https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=1200&q=80",
+  TOYOTA:     "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
+  TOYOTA1:    "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
+  BYD:        "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80",
+  DEFAULT:    "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80",
+};
 
 function getCarImage(item) {
   if (item?.image_url) {
     if (item.image_url.startsWith("http")) return item.image_url;
     return `${BASE_URL}${item.image_url.startsWith("/") ? "" : "/"}${item.image_url}`;
   }
-  return RED_FERRARI_IMAGE;
+  const brand = (item?.marca || "").toUpperCase().trim();
+  return BRAND_IMAGES[brand] || BRAND_IMAGES.DEFAULT;
 }
 
 function detectFuelType(item) {
