@@ -27,10 +27,14 @@ const isLocalWeb = typeof window !== 'undefined' && (
 );
 
 const LOCAL_BACKEND_URL = Platform.OS === 'web'
-  ? `http://${(typeof window !== 'undefined' && window.location?.hostname) || 'localhost'}:5000`
+  ? ((typeof window !== 'undefined' && window.location?.port === '8081')
+      ? `http://${window.location.hostname}:5000`
+      : (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : `http://${host}:5000`))
   : `http://${host}:5000`;
 
-export const BASE_URL = (__DEV__ || isLocalWeb) ? LOCAL_BACKEND_URL : PROD_BACKEND_URL;
+export const BASE_URL = (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin && window.location?.port !== '8081')
+  ? window.location.origin
+  : ((__DEV__ || isLocalWeb) ? LOCAL_BACKEND_URL : PROD_BACKEND_URL);
 
 // Configure default axios headers
 axios.defaults.headers.common['bypass-tunnel-reminder'] = 'true';
