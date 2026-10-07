@@ -31,13 +31,16 @@ const linking = {
   ],
   config: {
     screens: {
-      PortalShowcase: 'portale',
-      PortalShowcaseDetail: 'portale/:id',
-      Login: 'login',
+      Login: '',
       Signup: 'signup',
-      StockUsato: 'stock',
       AdminDashboard: 'admin',
       SellerDashboard: 'seller',
+      Appointments: 'appointments',
+      OfficeChat: 'chat',
+      StockUsato: 'stock',
+      PortalHub: 'hub',
+      PortalShowcase: 'portale',
+      PortalShowcaseDetail: 'portale/:id',
     },
   },
 };
@@ -64,7 +67,7 @@ export default function App() {
     <SafeAreaProvider>
       <NavigationContainer linking={linking}>
         <Stack.Navigator
-          initialRouteName={Platform.OS === 'web' ? 'PortalShowcase' : 'Login'}
+          initialRouteName="Login"
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: '#0F0F13' },
