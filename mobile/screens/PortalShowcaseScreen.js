@@ -460,11 +460,19 @@ export default function PortalShowcaseScreen({ navigation, route }) {
             {/* Pinned to the Left Side of the Screen */}
             <TouchableOpacity
               style={styles.navBackBtn}
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.navigate('Login');
+                }
+              }}
               activeOpacity={0.8}
             >
               <Text style={styles.navBackIcon}>‹</Text>
-              <Text style={styles.navBackText}>Torna al Portale</Text>
+              <Text style={styles.navBackText}>
+                {user ? 'Torna al Portale' : '🔐 Accedi (Admin / Staff)'}
+              </Text>
             </TouchableOpacity>
 
             {/* Center: Search Box */}
@@ -505,11 +513,19 @@ export default function PortalShowcaseScreen({ navigation, route }) {
             <View style={styles.topNavMobileRow}>
               <TouchableOpacity
                 style={styles.navBackBtn}
-                onPress={() => navigation.goBack()}
+                onPress={() => {
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.navigate('Login');
+                  }
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={styles.navBackIcon}>‹</Text>
-                <Text style={styles.navBackText}>Torna al Portale</Text>
+                <Text style={styles.navBackText}>
+                  {user ? 'Torna al Portale' : '🔐 Accedi Staff'}
+                </Text>
               </TouchableOpacity>
 
               <View style={styles.navRightRow}>

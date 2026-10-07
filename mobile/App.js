@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, View, Text } from 'react-native';
+import { Image, View, Text, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -22,6 +22,26 @@ import * as Updates from 'expo-updates';
 
 const Stack = createNativeStackNavigator();
 
+const linking = {
+  prefixes: [
+    'https://rossomandi-backend.vercel.app',
+    'http://localhost:5000',
+    'http://localhost:8081',
+    'mobile://',
+  ],
+  config: {
+    screens: {
+      PortalShowcase: 'portale',
+      PortalShowcaseDetail: 'portale/:id',
+      Login: 'login',
+      Signup: 'signup',
+      StockUsato: 'stock',
+      AdminDashboard: 'admin',
+      SellerDashboard: 'seller',
+    },
+  },
+};
+
 export default function App() {
   React.useEffect(() => {
     async function checkForUpdates() {
@@ -42,9 +62,9 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
+      <NavigationContainer linking={linking}>
         <Stack.Navigator
-          initialRouteName="Login"
+          initialRouteName={Platform.OS === 'web' ? 'PortalShowcase' : 'Login'}
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: '#0F0F13' },

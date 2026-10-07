@@ -130,12 +130,20 @@ export default function LoginScreen({ navigation }) {
               </Text>
             </TouchableOpacity>
 
+            {/* Public Guest Portale Showcase Button */}
+            <TouchableOpacity 
+              style={styles.portalShowcaseButton} 
+              onPress={() => navigation.navigate('PortalShowcase', { isGuest: true })}
+            >
+              <Text style={styles.portalShowcaseButtonText}>🌟 Sfoglia Vetrina Portale (Preventivi Esterni)</Text>
+            </TouchableOpacity>
+
             {/* Public Guest Catalog Button */}
             <TouchableOpacity 
               style={styles.websiteButton} 
               onPress={() => navigation.navigate('StockUsato', { isGuest: true })}
             >
-              <Text style={styles.websiteButtonText}>🚗 Sfoglia Catalogo Auto (Ospite)</Text>
+              <Text style={styles.websiteButtonText}>🚗 Sfoglia Catalogo Stock Usato</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -223,8 +231,29 @@ const styles = StyleSheet.create({
     color: '#FFC107',
     fontWeight: 'bold',
   },
-  websiteButton: {
+  portalShowcaseButton: {
     marginTop: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#00E5FF',
+    backgroundColor: '#0B1C33',
+    alignItems: 'center',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  portalShowcaseButtonText: {
+    color: '#00E5FF',
+    fontSize: 15,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  websiteButton: {
+    marginTop: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 12,
