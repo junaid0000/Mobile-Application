@@ -645,8 +645,9 @@ def upsert_to_postgresql(data):
 
             # Push to Vercel Cloud server
             try:
+                cloud_url = 'https://rossomandi-auto-srl.vercel.app/api/sync/push-appointments'
                 cloud_req = urllib.request.Request(
-                    'https://rossomandi-backend.vercel.app/api/sync/push-appointments',
+                    cloud_url,
                     data=req_data,
                     headers={
                         'Content-Type': 'application/json',
@@ -657,7 +658,21 @@ def upsert_to_postgresql(data):
                 with urllib.request.urlopen(cloud_req, timeout=30) as resp:
                     total_pushed += len(chunk)
             except Exception as e:
-                pass
+                # Fallback to backend domain if needed
+                try:
+                    fb_req = urllib.request.Request(
+                        'https://rossomandi-backend.vercel.app/api/sync/push-appointments',
+                        data=req_data,
+                        headers={
+                            'Content-Type': 'application/json',
+                            'x-sync-key': 'rossomandi_secret_sync_2026'
+                        },
+                        method='POST'
+                    )
+                    with urllib.request.urlopen(fb_req, timeout=30) as resp:
+                        total_pushed += len(chunk)
+                except Exception:
+                    pass
 
         print(f"[LIVE CLOUD SYNC] Synced appointments to Supabase via local server & Vercel!", flush=True)
     except Exception as cloud_err:
@@ -813,18 +828,28 @@ def push_stock_usato_to_render(items):
     except Exception as err:
         pass
 
-    # 2. Push to Render Cloud server
+    # 2. Push to Cloud server
     try:
-        render_url = "https://rossomandi-backend.vercel.app/api/sync/push-stock-usato"
+        render_url = "https://rossomandi-auto-srl.vercel.app/api/sync/push-stock-usato"
         req_render = urllib.request.Request(
             render_url,
             data=req_data,
             headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
         )
         with urllib.request.urlopen(req_render, timeout=30) as resp:
-            print(f"[StockUsato Live Sync] Successfully pushed {len(items)} vehicles to Render Cloud DB! (HTTP {resp.status})", flush=True)
+            print(f"[StockUsato Live Sync] Successfully pushed {len(items)} vehicles to Cloud DB! (HTTP {resp.status})", flush=True)
     except Exception as err:
-        print(f"[StockUsato Live Sync Notice] {err}", flush=True)
+        try:
+            fb_url = "https://rossomandi-backend.vercel.app/api/sync/push-stock-usato"
+            fb_req = urllib.request.Request(
+                fb_url,
+                data=req_data,
+                headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
+            )
+            with urllib.request.urlopen(fb_req, timeout=30) as resp:
+                print(f"[StockUsato Live Sync] Successfully pushed {len(items)} vehicles to Cloud DB via fallback! (HTTP {resp.status})", flush=True)
+        except Exception:
+            pass
 
 def upsert_stock_usato_to_local_postgresql(items):
     """Inserts or updates stock_usato items in local PostgreSQL."""

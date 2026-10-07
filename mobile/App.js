@@ -24,6 +24,7 @@ const Stack = createNativeStackNavigator();
 
 const linking = {
   prefixes: [
+    'https://rossomandi-auto-srl.vercel.app',
     'https://rossomandi-backend.vercel.app',
     'http://localhost:5000',
     'http://localhost:8081',
