@@ -48,7 +48,7 @@ const linking = {
 export default function App() {
   React.useEffect(() => {
     async function checkForUpdates() {
-      if (!__DEV__) {
+      if (Platform.OS !== 'web' && !__DEV__) {
         try {
           const update = await Updates.checkForUpdateAsync();
           if (update.isAvailable) {
