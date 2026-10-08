@@ -398,7 +398,7 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
             <Text style={styles.breadcrumbActive} numberOfLines={1}>{model}</Text>
           </View>
 
-        {/* ── Vehicle Hero Banner with Full Image Framing & Zoom Lightbox ── */}
+        {/* ── Vehicle Hero Banner with Clean Image & Tap to Zoom ── */}
         <View style={styles.heroSection}>
           <View style={styles.heroImageCard}>
             <TouchableOpacity
@@ -409,50 +409,9 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
               <Image
                 source={{ uri: imgUri }}
                 style={styles.heroImage}
-                resizeMode={imageFit}
+                resizeMode="contain"
               />
             </TouchableOpacity>
-
-            {/* Badges Overlay */}
-            <View style={styles.heroBadgesRow}>
-              <View style={styles.brandBadge}>
-                <Text style={styles.brandBadgeText}>{brand}</Text>
-              </View>
-              {hasPdf && (
-                <View style={styles.pdfHeroBadge}>
-                  <Text style={styles.pdfHeroBadgeText}>📄 PDF Preventivo Pronto</Text>
-                </View>
-              )}
-            </View>
-
-            {/* Interactive Photo Controls on the Card */}
-            <View style={styles.heroActionControlsRow}>
-              <TouchableOpacity
-                style={styles.heroZoomTriggerBtn}
-                onPress={openLightbox}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.heroZoomTriggerIcon}>🔍</Text>
-                <Text style={styles.heroZoomTriggerText}>Ingrandisci & Zoom</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.heroFitToggleBtn}
-                onPress={() => setImageFit((f) => (f === "contain" ? "cover" : "contain"))}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.heroFitToggleText}>
-                  {imageFit === "contain" ? "🖼️ Foto Intera (100%)" : "📐 Modalità Riempi"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.heroFooterBar}>
-              <Text style={styles.heroRefText}>Rif. Indice #{indice} {nota1 ? `• Nota1 #${nota1}` : ""}</Text>
-              <TouchableOpacity onPress={openLightbox} activeOpacity={0.8}>
-                <Text style={styles.heroClickHint}>💡 Clicca sulla foto per ingrandire e muoverla a tutto schermo ↗</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
 
@@ -684,27 +643,29 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
 
       </ScrollView>
 
-      {/* ── Floating Quick Scroll Buttons (Su / Giù) ── */}
-      <View style={styles.floatingScrollControls}>
-        {showScrollTop && (
+      {/* ── Floating Quick Scroll Buttons (Su / Giù) Desktop Only ── */}
+      {IS_WIDE && (
+        <View style={styles.floatingScrollControls}>
+          {showScrollTop && (
+            <TouchableOpacity
+              style={styles.scrollFloatBtn}
+              onPress={scrollToTop}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.scrollFloatIcon}>▲</Text>
+              <Text style={styles.scrollFloatText}>SU</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.scrollFloatBtn}
-            onPress={scrollToTop}
+            onPress={scrollToBottom}
             activeOpacity={0.85}
           >
-            <Text style={styles.scrollFloatIcon}>▲</Text>
-            <Text style={styles.scrollFloatText}>SU</Text>
+            <Text style={styles.scrollFloatIcon}>▼</Text>
+            <Text style={styles.scrollFloatText}>GIÙ</Text>
           </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={styles.scrollFloatBtn}
-          onPress={scrollToBottom}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.scrollFloatIcon}>▼</Text>
-          <Text style={styles.scrollFloatText}>GIÙ</Text>
-        </TouchableOpacity>
-      </View>
+        </View>
+      )}
 
       {/* ── High-Definition Lightbox / Zoom & Pan Modal ── */}
       <Modal
@@ -909,50 +870,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: C.surface,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
+    gap: 8,
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#13223B",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#1E365D",
+    flexShrink: 1,
   },
   backBtnIcon: {
     color: "#00E5FF",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
-    marginRight: 6,
+    marginRight: 4,
     marginTop: -2,
   },
   backBtnText: {
     color: "#00E5FF",
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "700",
   },
   topBarRight: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 1,
   },
   gestionaleBtn: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#13223B",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#1E365D",
+    flexShrink: 1,
   },
   gestionaleBtnText: {
     color: "#00E5FF",
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "700",
   },
 
@@ -968,9 +933,10 @@ const styles = StyleSheet.create({
   breadcrumb: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 8,
+    flexWrap: "wrap",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
   },
   breadcrumbLink: {
     color: C.textMid,
@@ -996,12 +962,12 @@ const styles = StyleSheet.create({
 
   // ── Hero Section ──
   heroSection: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   heroImageCard: {
     width: "100%",
-    height: IS_WIDE ? 440 : 270,
+    height: IS_WIDE ? 440 : 250,
     borderRadius: 14,
     overflow: "hidden",
     backgroundColor: "#050B14",
@@ -1134,10 +1100,11 @@ const styles = StyleSheet.create({
 
   // ── Layout ──
   mainLayout: {
-    paddingHorizontal: 16,
-    gap: 16,
+    paddingHorizontal: 12,
+    gap: 14,
   },
   mainLayoutWide: {
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "flex-start",
   },
@@ -1208,13 +1175,13 @@ const styles = StyleSheet.create({
   specsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 8,
   },
   specBox: {
     backgroundColor: C.card,
     borderRadius: 12,
-    padding: 12,
-    width: "48%",
+    padding: 10,
+    width: "47%",
     flexGrow: 1,
     borderWidth: 1,
     borderColor: C.border,
@@ -1937,11 +1904,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   pdfPrimaryRow: {
-    flexDirection: "row",
+    flexDirection: SCREEN_WIDTH > 540 ? "row" : "column",
     gap: 8,
   },
   pdfSecondaryRow: {
-    flexDirection: "row",
+    flexDirection: SCREEN_WIDTH > 420 ? "row" : "column",
     gap: 8,
   },
 

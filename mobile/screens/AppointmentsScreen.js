@@ -267,9 +267,9 @@ export default function AppointmentsScreen({ navigation, route }) {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [sellerCode, setSellerCode] = useState(null); // user's own code
+  const [sellerCode, setSellerCode] = useState(user?.venditore_code || null);
   const [sellersList, setSellersList] = useState([]);
-  const [selectedSeller, setSelectedSeller] = useState('__ALL__'); // default depends on role
+  const [selectedSeller, setSelectedSeller] = useState(!isAdminUser && user?.venditore_code ? user.venditore_code : '__ALL__');
   const [activeNotification, setActiveNotification] = useState(null);
   const [expandedNotes, setExpandedNotes] = useState({});
 

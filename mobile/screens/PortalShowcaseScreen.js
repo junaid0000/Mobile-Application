@@ -583,13 +583,6 @@ export default function PortalShowcaseScreen({ navigation, route }) {
         {/* Main Contained Wrapper - Centers the content and maintains clean layout */}
         <View style={styles.pageContainer}>
 
-          {/* Top Description Heading */}
-          <View style={styles.pageIntroHeader}>
-            <Text style={styles.pageIntroText}>
-              Scopri le <Text style={styles.boldText}>migliori offerte di noleggio a lungo termine per {targetType.toLowerCase()}</Text>, scegli l'auto che preferisci, clicca sull'offerta e personalizza anticipo, km inclusi e durata. Confronta Benzina, Hybrid, Diesel e Full Electric in modo chiaro, senza sorprese, e richiedi una consulenza per guidare senza pensieri.
-            </Text>
-          </View>
-
           {/* Results Count Banner with Neon Accent */}
           <View style={styles.countBanner}>
             <Text style={styles.countText}>
@@ -660,40 +653,44 @@ export default function PortalShowcaseScreen({ navigation, route }) {
         </View>
       </ScrollView>
 
-      {/* ── Floating Quick Scroll Buttons (Su / Giù) ── */}
-      <View style={styles.floatingScrollControls}>
-        {showScrollTop && (
+      {/* ── Floating Quick Scroll Buttons (Su / Giù) Desktop Only ── */}
+      {IS_DESKTOP && (
+        <View style={styles.floatingScrollControls}>
+          {showScrollTop && (
+            <TouchableOpacity
+              style={styles.scrollFloatBtn}
+              onPress={scrollToTop}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.scrollFloatIcon}>▲</Text>
+              <Text style={styles.scrollFloatText}>SU</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.scrollFloatBtn}
-            onPress={scrollToTop}
+            onPress={scrollToBottom}
             activeOpacity={0.85}
           >
-            <Text style={styles.scrollFloatIcon}>▲</Text>
-            <Text style={styles.scrollFloatText}>SU</Text>
+            <Text style={styles.scrollFloatIcon}>▼</Text>
+            <Text style={styles.scrollFloatText}>GIÙ</Text>
           </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={styles.scrollFloatBtn}
-          onPress={scrollToBottom}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.scrollFloatIcon}>▼</Text>
-          <Text style={styles.scrollFloatText}>GIÙ</Text>
-        </TouchableOpacity>
-      </View>
+        </View>
+      )}
 
-      {/* Floating Gold/Yellow "Parla con noi" Badge */}
-      <TouchableOpacity
-        style={styles.floatingChatBadge}
-        onPress={() => {
-          if (Platform.OS === "web") alert("Contatta Rossomandi SRL: +39 348 171 4322");
-        }}
-        activeOpacity={0.9}
-      >
-        <Text style={styles.floatingChatText}>PARLA</Text>
-        <Text style={styles.floatingChatSub}>CON</Text>
-        <Text style={styles.floatingChatText}>NOI</Text>
-      </TouchableOpacity>
+      {/* Floating Gold/Yellow "Parla con noi" Badge Desktop Only */}
+      {IS_DESKTOP && (
+        <TouchableOpacity
+          style={styles.floatingChatBadge}
+          onPress={() => {
+            if (Platform.OS === "web") alert("Contatta Rossomandi SRL: +39 348 171 4322");
+          }}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.floatingChatText}>PARLA</Text>
+          <Text style={styles.floatingChatSub}>CON</Text>
+          <Text style={styles.floatingChatText}>NOI</Text>
+        </TouchableOpacity>
+      )}
 
     </SafeAreaView>
   );
