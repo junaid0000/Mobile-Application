@@ -654,7 +654,7 @@ export default function PortalShowcaseScreen({ navigation, route }) {
       </ScrollView>
 
       {/* ── Floating Quick Scroll Buttons (Su / Giù) Desktop Only ── */}
-      {IS_DESKTOP && (
+      {isDesktop && (
         <View style={styles.floatingScrollControls}>
           {showScrollTop && (
             <TouchableOpacity
@@ -678,7 +678,7 @@ export default function PortalShowcaseScreen({ navigation, route }) {
       )}
 
       {/* Floating Gold/Yellow "Parla con noi" Badge Desktop Only */}
-      {IS_DESKTOP && (
+      {isDesktop && (
         <TouchableOpacity
           style={styles.floatingChatBadge}
           onPress={() => {
