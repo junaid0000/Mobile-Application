@@ -44,6 +44,8 @@ export default function LoginScreen({ navigation }) {
 
       if (user.role === 'admin') {
         navigation.navigate('AdminDashboard', { user, token });
+      } else if (user.role === 'external' || user.role === 'collaborator') {
+        navigation.navigate('PortalShowcase', { user, token });
       } else {
         navigation.navigate('SellerDashboard', { user, token });
       }

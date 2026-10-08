@@ -366,15 +366,17 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
           <Text style={styles.backBtnText}>Torna alla Vetrina</Text>
         </TouchableOpacity>
 
-        <View style={styles.topBarRight}>
-          <TouchableOpacity
-            style={styles.gestionaleBtn}
-            onPress={handleOpenGestionale}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.gestionaleBtnText}>⚙️ Vista Gestionale</Text>
-          </TouchableOpacity>
-        </View>
+        {user?.role !== 'external' && (
+          <View style={styles.topBarRight}>
+            <TouchableOpacity
+              style={styles.gestionaleBtn}
+              onPress={handleOpenGestionale}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.gestionaleBtnText}>⚙️ Vista Gestionale</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       <ScrollView

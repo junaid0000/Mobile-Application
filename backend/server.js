@@ -479,11 +479,11 @@ const isAdmin = async (req, res, next) => {
   }
 };
 
-// Office Staff Auth Check Middleware (Admin or Seller)
+// Office Staff Auth Check Middleware (Admin, Seller, or Staff)
 const isOfficeStaff = async (req, res, next) => {
   try {
     const userResult = await db.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
-    if (userResult.rows.length > 0 && (userResult.rows[0].role === 'admin' || userResult.rows[0].role === 'seller')) {
+    if (userResult.rows.length > 0 && (userResult.rows[0].role === 'admin' || userResult.rows[0].role === 'seller' || userResult.rows[0].role === 'staff')) {
       next();
     } else {
       res.status(403).json({ error: 'Access denied: Office staff only' });
@@ -497,6 +497,16 @@ const isOfficeStaff = async (req, res, next) => {
 function determineUserRoleAndCode(email, name, requestedRole, requestedCode) {
   const emailLower = (email || '').toLowerCase().trim();
   const nameLower = (name || '').toLowerCase().trim();
+
+  // If user requested external collaborator role
+  if (requestedRole === 'external' || requestedRole === 'collaborator') {
+    return { role: 'external', venditore_code: null };
+  }
+
+  // If user requested office staff role
+  if (requestedRole === 'staff') {
+    return { role: 'staff', venditore_code: null };
+  }
 
   // If user requested seller or provided a code, respect seller role
   if (requestedRole === 'seller' || requestedCode) {
@@ -534,7 +544,7 @@ function determineUserRoleAndCode(email, name, requestedRole, requestedCode) {
     return { role: 'admin', venditore_code: null };
   }
 
-  return { role: 'seller', venditore_code: null };
+  return { role: requestedRole || 'seller', venditore_code: null };
 }
 
 // Public and authenticated endpoint to get distinct seller codes for dropdowns

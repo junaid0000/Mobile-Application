@@ -461,7 +461,9 @@ export default function PortalShowcaseScreen({ navigation, route }) {
             <TouchableOpacity
               style={styles.navBackBtn}
               onPress={() => {
-                if (navigation.canGoBack()) {
+                if (user?.role === 'external') {
+                  navigation.navigate('Login');
+                } else if (navigation.canGoBack()) {
                   navigation.goBack();
                 } else {
                   navigation.navigate('Login');
@@ -469,9 +471,9 @@ export default function PortalShowcaseScreen({ navigation, route }) {
               }}
               activeOpacity={0.8}
             >
-              <Text style={styles.navBackIcon}>‹</Text>
+              <Text style={styles.navBackIcon}>{user?.role === 'external' ? '🚪' : '‹'}</Text>
               <Text style={styles.navBackText}>
-                {user ? 'Torna al Portale' : '🔐 Accedi (Admin / Staff)'}
+                {user?.role === 'external' ? 'Esci (Logout)' : user ? 'Torna al Portale' : '🔐 Accedi (Admin / Staff)'}
               </Text>
             </TouchableOpacity>
 
@@ -514,7 +516,9 @@ export default function PortalShowcaseScreen({ navigation, route }) {
               <TouchableOpacity
                 style={styles.navBackBtn}
                 onPress={() => {
-                  if (navigation.canGoBack()) {
+                  if (user?.role === 'external') {
+                    navigation.navigate('Login');
+                  } else if (navigation.canGoBack()) {
                     navigation.goBack();
                   } else {
                     navigation.navigate('Login');
@@ -522,9 +526,9 @@ export default function PortalShowcaseScreen({ navigation, route }) {
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.navBackIcon}>‹</Text>
+                <Text style={styles.navBackIcon}>{user?.role === 'external' ? '🚪' : '‹'}</Text>
                 <Text style={styles.navBackText}>
-                  {user ? 'Torna al Portale' : '🔐 Accedi Staff'}
+                  {user?.role === 'external' ? 'Esci' : user ? 'Torna al Portale' : '🔐 Accedi Staff'}
                 </Text>
               </TouchableOpacity>
 

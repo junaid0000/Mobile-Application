@@ -70,7 +70,7 @@ export default function SignupScreen({ navigation }) {
       </View>
 
       <View style={styles.form}>
-        {/* Role Selector Pills (Admin & Venditore only) */}
+        {/* Role Selector Pills */}
         <Text style={styles.roleLabel}>Tipo di Account:</Text>
         <View style={styles.rolePillsRow}>
           <TouchableOpacity 
@@ -81,12 +81,42 @@ export default function SignupScreen({ navigation }) {
           </TouchableOpacity>
 
           <TouchableOpacity 
+            style={[styles.rolePill, role === 'external' && styles.rolePillActive]} 
+            onPress={() => setRole('external')}
+          >
+            <Text style={[styles.rolePillText, role === 'external' && styles.rolePillTextActive]}>🤝 Esterno</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.rolePill, role === 'staff' && styles.rolePillActive]} 
+            onPress={() => setRole('staff')}
+          >
+            <Text style={[styles.rolePillText, role === 'staff' && styles.rolePillTextActive]}>🏢 Staff</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
             style={[styles.rolePill, role === 'admin' && styles.rolePillActive]} 
             onPress={() => setRole('admin')}
           >
             <Text style={[styles.rolePillText, role === 'admin' && styles.rolePillTextActive]}>👑 Admin</Text>
           </TouchableOpacity>
         </View>
+
+        {role === 'external' && (
+          <View style={styles.roleInfoBox}>
+            <Text style={styles.roleInfoText}>
+              🤝 <Text style={{ fontWeight: '700', color: '#00E5FF' }}>Collaboratore Esterno:</Text> Accesso dedicato al Portale Vetrina e Preventivi PDF.
+            </Text>
+          </View>
+        )}
+
+        {role === 'staff' && (
+          <View style={styles.roleInfoBox}>
+            <Text style={styles.roleInfoText}>
+              🏢 <Text style={{ fontWeight: '700', color: '#2ED573' }}>Staff di Ufficio:</Text> Accesso a Portale, Stock Usato, Chat Ufficio e Appuntamenti.
+            </Text>
+          </View>
+        )}
 
         <TextInput
           style={styles.input}
@@ -210,17 +240,21 @@ const styles = StyleSheet.create({
   },
   rolePillsRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
   },
   rolePill: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    flexBasis: '48%',
+    flexGrow: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 10,
     backgroundColor: '#161822',
     borderWidth: 1,
     borderColor: '#2A2D3A',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   rolePillActive: {
     backgroundColor: 'rgba(255,85,0,0.18)',
@@ -228,12 +262,25 @@ const styles = StyleSheet.create({
   },
   rolePillText: {
     color: '#888',
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: '600',
   },
   rolePillTextActive: {
     color: '#FF5500',
     fontWeight: 'bold',
+  },
+  roleInfoBox: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 14,
+  },
+  roleInfoText: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    lineHeight: 16,
   },
   adminCodeBox: {
     backgroundColor: 'rgba(229,57,53,0.08)',
