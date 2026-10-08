@@ -226,6 +226,8 @@ def fetch_access_data(db_path):
                 interno = str(row[0]).strip() if row[0] is not None else None
                 cliente = row[1].strip() if row[1] else None
                 venditore = row[2].strip() if row[2] else None
+                if venditore and 'BERTOLACCI' in venditore.upper():
+                    venditore = 'BM'
                 date_val = row[3]
                 time_str = str(row[4]).strip() if row[4] is not None else ""
                 luogo = None

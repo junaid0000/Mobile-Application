@@ -541,7 +541,13 @@ function determineUserRoleAndCode(email, name, requestedRole, requestedCode) {
 const handleSellersList = async (req, res) => {
   try {
     const sellersResult = await db.query(
-      "SELECT DISTINCT UPPER(TRIM(venditore)) as code FROM appointments WHERE venditore IS NOT NULL AND TRIM(venditore) != '' ORDER BY code ASC"
+      `SELECT DISTINCT UPPER(TRIM(venditore)) as code 
+       FROM appointments 
+       WHERE venditore IS NOT NULL 
+         AND TRIM(venditore) != '' 
+         AND UPPER(TRIM(venditore)) NOT IN ('GC', 'BERTOLACCI MICHELE')
+         AND LENGTH(TRIM(venditore)) <= 4
+       ORDER BY code ASC`
     );
     const codes = sellersResult.rows.map(r => r.code);
     res.json({ sellers: codes });
@@ -1983,16 +1989,7 @@ app.post('/api/sync/push-database1-cars', async (req, res) => {
 });
 
 
-// GET distinct seller codes from appointments (for dropdown filter)
-app.get('/api/seller/sellers-list', authenticateToken, async (req, res) => {
-  try {
-    const result = await db.query('SELECT DISTINCT UPPER(venditore) AS venditore FROM appointments WHERE venditore IS NOT NULL AND TRIM(venditore) != \'\' ORDER BY venditore ASC');
-    res.json({ sellers: result.rows.map(r => r.venditore) });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-});
+// (Duplicate endpoint replaced by centralized handleSellersList)
 
 
 // Get Chat Setting
@@ -2095,7 +2092,10 @@ app.get('/api/office/users', authenticateToken, isOfficeStaff, async (req, res) 
     const currentUserId = req.user.id;
     const result = await db.query(
       `SELECT id, name, email, role, venditore_code FROM users 
-       WHERE role IN ('admin', 'seller') AND id != $1 
+       WHERE role IN ('admin', 'seller') 
+         AND id != $1 
+         AND email NOT ILIKE '%demo%' 
+         AND name NOT ILIKE '%demo%'
        ORDER BY role ASC, name ASC`,
       [currentUserId]
     );
