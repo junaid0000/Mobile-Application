@@ -259,6 +259,11 @@ const initDb = async () => {
         message_text TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE office_messages ADD COLUMN IF NOT EXISTS reply_to_id INT REFERENCES office_messages(id) ON DELETE SET NULL;
+      ALTER TABLE office_messages ADD COLUMN IF NOT EXISTS recipient_id INT REFERENCES users(id) ON DELETE CASCADE;
+      ALTER TABLE office_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP WITH TIME ZONE;
+      ALTER TABLE office_messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE;
+      ALTER TABLE office_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;
     `);
 
     // Create settings table
@@ -435,8 +440,7 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token || token === 'undefined' || token === 'null') {
-    req.user = { id: 0, role: 'admin', email: 'guest@rossomandi.com' };
-    return next();
+    return res.status(401).json({ error: 'Token mancante o non valido' });
   }
 
   try {
@@ -444,8 +448,7 @@ const authenticateToken = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (err) {
-    req.user = { id: 0, role: 'admin', email: 'guest@rossomandi.com' };
-    next();
+    return res.status(401).json({ error: 'Token scaduto o non valido' });
   }
 };
 
@@ -639,9 +642,14 @@ app.post('/api/auth/login', async (req, res) => {
       user.rows[0].role = 'seller';
     }
 
-    // Generate token with role
+    // Generate token with role and venditore_code
     const token = jwt.sign(
-      { id: user.rows[0].id, email: user.rows[0].email, role: user.rows[0].role },
+      { 
+        id: user.rows[0].id, 
+        email: user.rows[0].email, 
+        role: user.rows[0].role,
+        venditore_code: user.rows[0].venditore_code 
+      },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -652,6 +660,7 @@ app.post('/api/auth/login', async (req, res) => {
         name: user.rows[0].name,
         email: user.rows[0].email,
         role: user.rows[0].role,
+        venditore_code: user.rows[0].venditore_code,
         phone: user.rows[0].phone,
         address: user.rows[0].address
       },
