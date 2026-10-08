@@ -85,8 +85,8 @@ export default function SellerDashboard({ navigation, route }) {
   };
 
   const t = {
-    welcome: language === 'IT' ? `Benvenuto, ${user?.name || 'Venditore'}!` : `Welcome, ${user?.name || 'Seller'}!`,
-    subWelcome: language === 'IT' ? 'Pannello di controllo venditori e staff' : 'Sales and staff control panel',
+    welcome: language === 'IT' ? `Benvenuto, ${user?.name || (user?.role === 'external' ? 'Collaboratore' : 'Venditore')}!` : `Welcome, ${user?.name || (user?.role === 'external' ? 'Collaborator' : 'Seller')}!`,
+    subWelcome: user?.role === 'external' ? (language === 'IT' ? 'Pannello Collaboratori Esterni' : 'External Collaborator Panel') : (language === 'IT' ? 'Pannello di controllo venditori e staff' : 'Sales and staff control panel'),
     appointments: language === 'IT' ? 'Appuntamenti' : 'Appointments',
     officeChat: language === 'IT' ? 'Chat Ufficio' : 'Office Chat',
     settings: language === 'IT' ? 'Impostazioni' : 'Settings',
@@ -178,31 +178,33 @@ export default function SellerDashboard({ navigation, route }) {
         <Text style={styles.subWelcomeText}>{t.subWelcome}</Text>
 
         <View style={[styles.buttonsStack, { maxWidth: isMobile ? '88%' : 320, width: '100%' }]}>
-          {/* Button 1: Appuntamenti */}
-          <TouchableOpacity
-            style={styles.clay3DButton}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('Appointments', { user, token })}
-          >
-            <View style={styles.clayButtonInner}>
-              <Text style={styles.clayButtonEmoji}>📅</Text>
-              <Text style={styles.clayButtonText}>{t.appointments}</Text>
-            </View>
-          </TouchableOpacity>
+          {user?.role !== 'external' && (
+            <>
+              {/* Button 1: Appuntamenti */}
+              <TouchableOpacity
+                style={styles.clay3DButton}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('Appointments', { user, token })}
+              >
+                <View style={styles.clayButtonInner}>
+                  <Text style={styles.clayButtonEmoji}>📅</Text>
+                  <Text style={styles.clayButtonText}>{t.appointments}</Text>
+                </View>
+              </TouchableOpacity>
 
-          {/* Button 2: Stock Usato */}
-          <TouchableOpacity
-            style={[styles.clay3DButton, { backgroundColor: '#1E293B', borderColor: '#2ED573', borderWidth: 1.5 }]}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('StockUsato', { user, token })}
-          >
-            <View style={styles.clayButtonInner}>
-              <Text style={styles.clayButtonEmoji}>🚗</Text>
-              <Text style={[styles.clayButtonText, { color: '#2ED573' }]}>Stock Usato</Text>
-            </View>
-          </TouchableOpacity>
-
-
+              {/* Button 2: Stock Usato */}
+              <TouchableOpacity
+                style={[styles.clay3DButton, { backgroundColor: '#1E293B', borderColor: '#2ED573', borderWidth: 1.5 }]}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('StockUsato', { user, token })}
+              >
+                <View style={styles.clayButtonInner}>
+                  <Text style={styles.clayButtonEmoji}>🚗</Text>
+                  <Text style={[styles.clayButtonText, { color: '#2ED573' }]}>Stock Usato</Text>
+                </View>
+              </TouchableOpacity>
+            </>
+          )}
 
           {/* Button: Portale */}
           <TouchableOpacity
@@ -216,17 +218,19 @@ export default function SellerDashboard({ navigation, route }) {
             </View>
           </TouchableOpacity>
 
-          {/* Button 4: Chat Ufficio */}
-          <TouchableOpacity
-            style={[styles.clay3DButton, styles.clay3DButtonDarker]}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('OfficeChat', { user, token })}
-          >
-            <View style={styles.clayButtonInner}>
-              <Text style={styles.clayButtonEmoji}>💬</Text>
-              <Text style={styles.clayButtonText}>{t.officeChat}</Text>
-            </View>
-          </TouchableOpacity>
+          {user?.role !== 'external' && (
+            /* Button 4: Chat Ufficio */
+            <TouchableOpacity
+              style={[styles.clay3DButton, styles.clay3DButtonDarker]}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('OfficeChat', { user, token })}
+            >
+              <View style={styles.clayButtonInner}>
+                <Text style={styles.clayButtonEmoji}>💬</Text>
+                <Text style={styles.clayButtonText}>{t.officeChat}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
         </View>
       </View>

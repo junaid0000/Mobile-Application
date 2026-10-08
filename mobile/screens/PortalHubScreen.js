@@ -152,8 +152,8 @@ export default function PortalHubScreen({ navigation, route }) {
         </View>
 
         <View style={styles.userPill}>
-          <View style={[styles.userDot, { backgroundColor: isAdmin ? "#F59E0B" : "#00E5FF" }]} />
-          <Text style={styles.userPillText}>{isAdmin ? "Admin" : "Venditore"}</Text>
+          <View style={[styles.userDot, { backgroundColor: isAdmin ? "#F59E0B" : (user?.role === "external" ? "#A855F7" : "#00E5FF") }]} />
+          <Text style={styles.userPillText}>{isAdmin ? "Admin" : (user?.role === "external" ? "Esterno" : "Venditore")}</Text>
         </View>
       </View>
 

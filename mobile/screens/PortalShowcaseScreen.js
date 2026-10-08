@@ -201,7 +201,6 @@ function LuxuryCarCard({ item, onPress }) {
 
 // ── Left Filter Sidebar (Luxury Dark Style) ──
 function LuxurySidebar({
-  targetType, setTargetType,
   anticipoZero, setAnticipoZero,
   brands, activeBrands, onToggleBrand,
   tipi, activeTipi, onToggleTipo,
@@ -215,31 +214,6 @@ function LuxurySidebar({
       </View>
 
       <View style={styles.sidebarBody}>
-        
-        {/* Offerte per: Privati vs Aziende */}
-        <View style={styles.filterGroup}>
-          <Text style={styles.groupLabel}>Offerte per</Text>
-          <View style={styles.targetToggleRow}>
-            <TouchableOpacity
-              style={[styles.targetBtn, targetType === "Privati" ? styles.targetBtnActive : styles.targetBtnInactive]}
-              onPress={() => setTargetType("Privati")}
-            >
-              <Text style={[styles.targetBtnText, targetType === "Privati" ? styles.targetTextActive : styles.targetTextInactive]}>
-                Privati
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.targetBtn, targetType === "Aziende" ? styles.targetBtnActive : styles.targetBtnInactive]}
-              onPress={() => setTargetType("Aziende")}
-            >
-              <Text style={[styles.targetBtnText, targetType === "Aziende" ? styles.targetTextActive : styles.targetTextInactive]}>
-                Aziende e P.IVA
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* Anticipo Zero Checkbox */}
         <View style={styles.filterGroup}>
           <Text style={styles.groupLabel}>Anticipo zero</Text>
@@ -461,19 +435,21 @@ export default function PortalShowcaseScreen({ navigation, route }) {
             <TouchableOpacity
               style={styles.navBackBtn}
               onPress={() => {
-                if (user?.role === 'external') {
-                  navigation.navigate('Login');
-                } else if (navigation.canGoBack()) {
+                if (navigation.canGoBack()) {
                   navigation.goBack();
+                } else if (user?.role === 'admin') {
+                  navigation.navigate('AdminDashboard', { user, token });
+                } else if (user) {
+                  navigation.navigate('SellerDashboard', { user, token });
                 } else {
                   navigation.navigate('Login');
                 }
               }}
               activeOpacity={0.8}
             >
-              <Text style={styles.navBackIcon}>{user?.role === 'external' ? '🚪' : '‹'}</Text>
+              <Text style={styles.navBackIcon}>‹</Text>
               <Text style={styles.navBackText}>
-                {user?.role === 'external' ? 'Esci (Logout)' : user ? 'Torna al Portale' : '🔐 Accedi (Admin / Staff)'}
+                {user ? 'Torna al Portale' : '🔐 Accedi (Admin / Staff)'}
               </Text>
             </TouchableOpacity>
 
@@ -516,19 +492,21 @@ export default function PortalShowcaseScreen({ navigation, route }) {
               <TouchableOpacity
                 style={styles.navBackBtn}
                 onPress={() => {
-                  if (user?.role === 'external') {
-                    navigation.navigate('Login');
-                  } else if (navigation.canGoBack()) {
+                  if (navigation.canGoBack()) {
                     navigation.goBack();
+                  } else if (user?.role === 'admin') {
+                    navigation.navigate('AdminDashboard', { user, token });
+                  } else if (user) {
+                    navigation.navigate('SellerDashboard', { user, token });
                   } else {
                     navigation.navigate('Login');
                   }
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.navBackIcon}>{user?.role === 'external' ? '🚪' : '‹'}</Text>
+                <Text style={styles.navBackIcon}>‹</Text>
                 <Text style={styles.navBackText}>
-                  {user?.role === 'external' ? 'Esci' : user ? 'Torna al Portale' : '🔐 Accedi Staff'}
+                  {user ? 'Torna al Portale' : '🔐 Accedi Staff'}
                 </Text>
               </TouchableOpacity>
 
@@ -603,8 +581,6 @@ export default function PortalShowcaseScreen({ navigation, route }) {
             {/* Left Sidebar Filter (240px) */}
             <View style={styles.sidebarColumn}>
               <LuxurySidebar
-                targetType={targetType}
-                setTargetType={setTargetType}
                 anticipoZero={anticipoZero}
                 setAnticipoZero={setAnticipoZero}
                 brands={brands}
