@@ -7,9 +7,10 @@ export default function SignupScreen({ navigation }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('seller'); // 'seller' | 'admin'
+  const [role, setRole] = useState('seller'); // 'seller' | 'external' | 'staff' | 'admin'
   const [venditoreCode, setVenditoreCode] = useState('');
   const [adminCode, setAdminCode] = useState('');
+  const [securityCode, setSecurityCode] = useState('');
   const [availableSellers, setAvailableSellers] = useState(['GC', 'MR', 'IS', 'AP']);
   const [loading, setLoading] = useState(false);
 
@@ -38,6 +39,11 @@ export default function SignupScreen({ navigation }) {
       return;
     }
 
+    if (role !== 'admin' && !isKnownAdminEmail && !securityCode.trim()) {
+      Alert.alert('Codice Richiesto', 'Inserisci il Codice di Sicurezza Aziendale per completare la registrazione.');
+      return;
+    }
+
     setLoading(true);
     try {
       await axios.post(`${BASE_URL}/api/auth/signup`, {
@@ -47,6 +53,7 @@ export default function SignupScreen({ navigation }) {
         role,
         venditore_code: role === 'seller' ? venditoreCode.trim().toUpperCase() : null,
         admin_code: role === 'admin' ? adminCode.trim() : null,
+        security_code: securityCode.trim(),
       });
 
       Alert.alert('Successo', 'Account creato con successo! Ora puoi effettuare il login.');
@@ -187,6 +194,21 @@ export default function SignupScreen({ navigation }) {
           </View>
         )}
 
+        {/* Company Security Passcode Input (For Seller, External, Staff) */}
+        {role !== 'admin' && (
+          <View style={styles.securityCodeBox}>
+            <Text style={styles.securityCodeLabel}>🔒 Codice di Sicurezza Aziendale *:</Text>
+            <TextInput
+              style={[styles.input, { borderColor: '#00E5FF', marginBottom: 0 }]}
+              placeholder="Inserisci codice sicurezza (es. rossomandi)"
+              placeholderTextColor="#64748B"
+              autoCapitalize="none"
+              value={securityCode}
+              onChangeText={setSecurityCode}
+            />
+          </View>
+        )}
+
         <TouchableOpacity style={styles.button} onPress={handleSignup} disabled={loading}>
           {loading ? (
             <ActivityIndicator color="#FFF" />
@@ -281,6 +303,20 @@ const styles = StyleSheet.create({
     color: '#CBD5E1',
     fontSize: 12,
     lineHeight: 16,
+  },
+  securityCodeBox: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    marginBottom: 16,
+  },
+  securityCodeLabel: {
+    color: '#38BDF8',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
   },
   adminCodeBox: {
     backgroundColor: 'rgba(229,57,53,0.08)',

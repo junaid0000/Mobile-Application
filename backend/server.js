@@ -573,7 +573,7 @@ app.get('/api/seller/sellers-list', authenticateToken, handleSellersList);
 // Signup Endpoint
 app.post('/api/auth/signup', async (req, res) => {
   try {
-    const { name, email, password, role, venditore_code, admin_code, phone, address } = req.body;
+    const { name, email, password, role, venditore_code, admin_code, security_code, phone, address } = req.body;
 
     // Check if user exists
     const userExists = await db.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase().trim()]);
@@ -581,15 +581,25 @@ app.post('/api/auth/signup', async (req, res) => {
       return res.status(400).json({ error: 'User already exists' });
     }
 
+    const emailLower = (email || '').toLowerCase().trim();
+    const isOfficialRossomandiEmail = emailLower.endsWith('@rossomandi.com');
+    const providedCode = (security_code || admin_code || '').trim().toLowerCase();
+    const validCompanyCodes = ['rossomandi', 'rosso2026', '1234', 'admin2026', 'admin123'];
+
     // 1. Admin Security Check
     if (role === 'admin') {
-      const emailLower = (email || '').toLowerCase().trim();
       const validAdminEmails = ['admin@rossomandi.com', 'lorenzo@rossomandi.com', 'francesco@rossomandi.com', 'valentina@rossomandi.com', 'junaid@rossomandi.com', 'junaidmunir.janjua@rossomandi.com', 'junaidmunir@rossomandi.com'];
-      const isOfficialAdminEmail = validAdminEmails.includes(emailLower) || emailLower.endsWith('@rossomandi.com');
-      const isPasscodeValid = (admin_code || '').trim() === 'ADMIN2026' || (admin_code || '').trim() === '1234';
+      const isOfficialAdminEmail = validAdminEmails.includes(emailLower) || isOfficialRossomandiEmail;
+      const isAdminPasscodeValid = providedCode === 'admin2026' || providedCode === '1234' || providedCode === 'rossomandi' || providedCode === 'admin123';
 
-      if (!isOfficialAdminEmail && !isPasscodeValid) {
+      if (!isOfficialAdminEmail && !isAdminPasscodeValid) {
         return res.status(403).json({ error: 'Codice di sicurezza Amministratore non valido o email non autorizzata.' });
+      }
+    } else {
+      // 2. Company Security Code Check for all new users (External, Staff, Seller)
+      const isCodeValid = validCompanyCodes.includes(providedCode);
+      if (!isOfficialRossomandiEmail && !isCodeValid) {
+        return res.status(403).json({ error: 'Codice di Sicurezza Aziendale non valido. Inserisci il codice "rossomandi" fornito dall\'ufficio.' });
       }
     }
 
