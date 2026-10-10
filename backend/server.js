@@ -2366,6 +2366,9 @@ app.use((req, res, next) => {
   }
   const indexPath = path.join(PUBLIC_DIR, 'index.html');
   if (fs.existsSync(indexPath)) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     return res.sendFile(indexPath);
   }
   res.json({ status: 'ok', message: 'Rossomandi Backend Running' });
