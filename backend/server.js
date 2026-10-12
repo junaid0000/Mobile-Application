@@ -1464,7 +1464,7 @@ app.get('/api/portal/cars', async (req, res) => {
         LEFT JOIN cloud_assets ca_pdf ON ca_pdf.type = 'pdf' AND (LOWER(p.nota1) = LOWER(ca_pdf.code) OR LOWER(p.indice) = LOWER(ca_pdf.code))
         LEFT JOIN cloud_assets ca_img ON ca_img.type = 'image' AND LOWER(p.indice) = LOWER(ca_img.code)
         LEFT JOIN cloud_assets ca_img_nota ON ca_img_nota.type = 'image' AND LOWER(p.nota1) = LOWER(ca_img_nota.code)
-        ORDER BY CAST(p.indice AS BIGINT) DESC LIMIT 300
+        ORDER BY CAST(p.indice AS BIGINT) DESC LIMIT 2000
       `);
       if (esterniRes.rows && esterniRes.rows.length > 0) {
         rows = esterniRes.rows;
@@ -1476,7 +1476,7 @@ app.get('/api/portal/cars', async (req, res) => {
     // 2. Fallback to database1_cars only if portale_preventivi_esterni is empty
     if (rows.length === 0) {
       const dbRes = await db.query(
-        "SELECT * FROM database1_cars ORDER BY updated_at DESC, interno DESC LIMIT 300"
+        "SELECT * FROM database1_cars ORDER BY updated_at DESC, interno DESC LIMIT 2000"
       );
       rows = dbRes.rows;
     }
