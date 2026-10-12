@@ -72,6 +72,10 @@ export default function PortalListScreen({ navigation, route }) {
 
   useEffect(() => {
     fetchData();
+    const pollInterval = setInterval(() => {
+      fetchData();
+    }, 5000);
+    return () => clearInterval(pollInterval);
   }, [fetchData]);
 
   const onRefresh = () => {
