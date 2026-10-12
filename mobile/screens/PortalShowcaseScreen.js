@@ -274,8 +274,8 @@ export default function PortalShowcaseScreen({ navigation, route }) {
   const [activeBrands, setActiveBrands] = useState([]);
   const [activeTipi, setActiveTipi] = useState([]);
 
-  const fetchCars = useCallback(async () => {
-    setLoading(true);
+  const fetchCars = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await axios.get(`${BASE_URL}/api/portal/cars`, { headers });
@@ -283,17 +283,22 @@ export default function PortalShowcaseScreen({ navigation, route }) {
     } catch (e) {
       console.error("Errore vetrina:", e);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
-    fetchCars();
+    fetchCars(false);
+    // 5-second automatic live sync polling so newly added cars appear immediately
+    const pollInterval = setInterval(() => {
+      fetchCars(true);
+    }, 5000);
+    return () => clearInterval(pollInterval);
   }, [fetchCars]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchCars();
+      fetchCars(true);
     }, [fetchCars])
   );
 

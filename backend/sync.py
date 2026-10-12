@@ -1206,8 +1206,18 @@ def push_tab_preventivi_esterni_to_server(cars):
     except Exception as err:
         pass
 
+def background_asset_sync_loop():
+    """Runs PDF and car image uploads continuously in a separate thread so the main car-data sync loop is NEVER blocked."""
+    while True:
+        try:
+            sync_preventivi_pdfs_to_supabase()
+            sync_car_images_to_supabase()
+        except Exception as e:
+            print(f"[Asset Sync Error] {e}", flush=True)
+        time.sleep(10)
+
 def main():
-    print("MS Access Backend Sync Service started.", flush=True)
+    print("MS Access Backend Sync Service started (5s auto-refresh loop active).", flush=True)
     user_home = os.path.expanduser("~")
     candidate_paths = [
         r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb",
@@ -1231,7 +1241,6 @@ def main():
                 if os.path.exists(path):
                     is_server = "192.168.12.250" in path or path.startswith("Z:")
                     tag = "LIVE SERVER" if is_server else "LOCAL FALLBACK"
-                    print(f"[{tag}] Connected to Access DB at: {path}", flush=True)
                     data = fetch_access_data(path)
                     stock_data = fetch_stock_usato_data(path)
                     db1_data = fetch_database1_data(path)
@@ -1242,6 +1251,10 @@ def main():
                     if data or stock_data or db1_data or portale_data:
                         break
                                 
+            if portale_data:
+                print(f"[tabPreventiviEsterni] Read {len(portale_data)} vehicles for Portale. Syncing...", flush=True)
+                push_tab_preventivi_esterni_to_server(portale_data)
+
             if data:
                 print(f"[Sync] Read {len(data)} records from Access DB. Syncing to PostgreSQL...", flush=True)
                 upsert_to_postgresql(data)
@@ -1255,20 +1268,11 @@ def main():
                 print(f"[Database1] Read {len(db1_data)} vehicles from Access DB. Syncing...", flush=True)
                 push_database1_cars_to_server(db1_data)
 
-            if portale_data:
-                print(f"[tabPreventiviEsterni] Read {len(portale_data)} vehicles for Portale. Syncing...", flush=True)
-                push_tab_preventivi_esterni_to_server(portale_data)
-
-            # Auto-sync new and updated Preventivi PDFs from C:\Users\Public\Preventivi_PDF to Cloud Storage
-            sync_preventivi_pdfs_to_supabase()
-
-            # Auto-sync new and updated Car Photos from C:\Users\Public\Esterni photo to Cloud Storage
-            sync_car_images_to_supabase()
-
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
             
         time.sleep(5)
 
 if __name__ == "__main__":
+    threading.Thread(target=background_asset_sync_loop, daemon=True).start()
     main()
