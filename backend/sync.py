@@ -1096,11 +1096,11 @@ def sync_car_images_to_supabase():
         if not os.path.exists(img_dir):
             continue
         try:
-            files = os.listdir(img_dir)
+            files = [fn for fn in os.listdir(img_dir) if any(fn.lower().endswith(ext) for ext in valid_exts)]
+            # Sort files by modification time so newer versions always take precedence
+            files.sort(key=lambda fn: os.path.getmtime(os.path.join(img_dir, fn)) if os.path.exists(os.path.join(img_dir, fn)) else 0)
             for f in files:
                 lower = f.lower()
-                if not any(lower.endswith(ext) for ext in valid_exts):
-                    continue
                 fpath = os.path.join(img_dir, f)
                 try:
                     stat = os.stat(fpath)
@@ -1110,7 +1110,9 @@ def sync_car_images_to_supabase():
                 if _tracked_img_stats.get(f) == key:
                     continue
                 
-                code = lower[:lower.rfind('.')].strip()
+                raw_code = lower[:lower.rfind('.')].strip()
+                # Clean code: handles cases like "38441 (1)" or "38441_copia" -> "38441"
+                code = raw_code.split()[0].split('_')[0].split('-')[0].split('(')[0].strip() or raw_code
                 content_type = "image/png" if lower.endswith('.png') else "image/jpeg"
                 try:
                     with open(fpath, "rb") as img_file:
@@ -1136,7 +1138,7 @@ def sync_car_images_to_supabase():
                             ts = int(time.time() * 1000)
                             cloud_url = f"{SUPABASE_STORAGE_URL}/storage/v1/object/public/car-images/{encoded_f}?t={ts}"
                             _tracked_img_stats[f] = key
-                            print(f"[Supabase Image Sync] Successfully uploaded {f} ({stat.st_size} bytes) to Cloud!", flush=True)
+                            print(f"[Supabase Image Sync] Successfully uploaded {f} -> Code '{code}' ({stat.st_size} bytes) to Cloud!", flush=True)
                             
                             update_payload = json.dumps({
                                 "code": code,
