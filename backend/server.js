@@ -1264,14 +1264,15 @@ async function syncLocalAssetsToCloud() {
   }
 }
 
-// Helper to find matching car image by indice (e.g. 38442.jpg, 38442.png) or model name
-function findImageForCar(code, modello) {
-  if (!code && !modello) return null;
+// Helper to find matching car image by nota1 (model ID) or indice (e.g. 38441.jpg, 38442.png) or model name
+function findImageForCar(code, nota1, modello) {
+  if (!code && !nota1 && !modello) return null;
   const cleanCode = code ? String(code).trim().toLowerCase() : '';
+  const cleanNota1 = nota1 ? String(nota1).trim().toLowerCase() : '';
   const cleanModel = modello ? String(modello).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '';
   const validExts = ['.jpg', '.jpeg', '.png', '.webp'];
 
-  // 1. Check shared Public folder (C:\Users\Public\Cars_Images)
+  // 1. Check shared Public folder (C:\Users\Public\Esterni photo)
   if (fs.existsSync(SHARED_PUBLIC_CARS_DIR)) {
     try {
       const publicFiles = fs.readdirSync(SHARED_PUBLIC_CARS_DIR);
@@ -1280,6 +1281,7 @@ function findImageForCar(code, modello) {
         const hasExt = validExts.some(ext => lower.endsWith(ext));
         if (!hasExt) return false;
         const nameWithoutExt = lower.substring(0, lower.lastIndexOf('.'));
+        if (cleanNota1 && (nameWithoutExt === cleanNota1 || nameWithoutExt.startsWith(cleanNota1))) return true;
         if (cleanCode && (nameWithoutExt === cleanCode || nameWithoutExt.startsWith(cleanCode))) return true;
         if (cleanModel && nameWithoutExt.replace(/[^a-z0-9]/g, '').includes(cleanModel)) return true;
         return false;
@@ -1316,6 +1318,7 @@ function findImageForCar(code, modello) {
         const hasExt = validExts.some(ext => lower.endsWith(ext));
         if (!hasExt) return false;
         const nameWithoutExt = lower.substring(0, lower.lastIndexOf('.'));
+        if (cleanNota1 && (nameWithoutExt === cleanNota1 || nameWithoutExt.startsWith(cleanNota1))) return true;
         if (cleanCode && (nameWithoutExt === cleanCode || nameWithoutExt.startsWith(cleanCode))) return true;
         if (cleanModel && nameWithoutExt.replace(/[^a-z0-9]/g, '').includes(cleanModel)) return true;
         return false;
@@ -1459,11 +1462,11 @@ app.get('/api/portal/cars', async (req, res) => {
         SELECT p.*,
                COALESCE(p.pdf_url, ca_pdf.cloud_url) as resolved_pdf_url,
                COALESCE(p.pdf_filename, ca_pdf.filename) as resolved_pdf_filename,
-               COALESCE(p.image_url, ca_img.cloud_url, ca_img_nota.cloud_url) as resolved_image_url
+               COALESCE(ca_img_nota.cloud_url, ca_img.cloud_url, p.image_url) as resolved_image_url
         FROM portale_preventivi_esterni p
         LEFT JOIN cloud_assets ca_pdf ON ca_pdf.type = 'pdf' AND (LOWER(p.nota1) = LOWER(ca_pdf.code) OR LOWER(p.indice) = LOWER(ca_pdf.code))
-        LEFT JOIN cloud_assets ca_img ON ca_img.type = 'image' AND LOWER(p.indice) = LOWER(ca_img.code)
         LEFT JOIN cloud_assets ca_img_nota ON ca_img_nota.type = 'image' AND LOWER(p.nota1) = LOWER(ca_img_nota.code)
+        LEFT JOIN cloud_assets ca_img ON ca_img.type = 'image' AND LOWER(p.indice) = LOWER(ca_img.code)
         ORDER BY CAST(p.indice AS BIGINT) DESC LIMIT 2000
       `);
       if (esterniRes.rows && esterniRes.rows.length > 0) {
@@ -1497,7 +1500,7 @@ app.get('/api/portal/cars', async (req, res) => {
         : (r.resolved_pdf_url || r.pdf_url || (hasPdf && targetPdfCode ? `/uploads/preventivi_pdf/${targetPdfCode}.pdf` : null));
 
       // Image resolution: check local disk first, fallback to cloud database assets
-      const localMatchedImage = findImageForCar(codeIndice, r.modello || r.modello_vettura);
+      const localMatchedImage = findImageForCar(codeIndice, codeNota1, r.modello || r.modello_vettura);
       const imageUrl = localMatchedImage 
         ? `/uploads/cars/${localMatchedImage}` 
         : (r.resolved_image_url || r.image_url || null);
