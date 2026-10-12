@@ -1455,9 +1455,17 @@ app.get('/api/portal/cars', async (req, res) => {
     // 1. Check portale_preventivi_esterni (exact tabPreventiviEsterni query from Access)
     let rows = [];
     try {
-      const esterniRes = await db.query(
-        "SELECT * FROM portale_preventivi_esterni ORDER BY CAST(indice AS BIGINT) DESC LIMIT 300"
-      );
+      const esterniRes = await db.query(`
+        SELECT p.*,
+               COALESCE(p.pdf_url, ca_pdf.cloud_url) as resolved_pdf_url,
+               COALESCE(p.pdf_filename, ca_pdf.filename) as resolved_pdf_filename,
+               COALESCE(p.image_url, ca_img.cloud_url, ca_img_nota.cloud_url) as resolved_image_url
+        FROM portale_preventivi_esterni p
+        LEFT JOIN cloud_assets ca_pdf ON ca_pdf.type = 'pdf' AND (LOWER(p.nota1) = LOWER(ca_pdf.code) OR LOWER(p.indice) = LOWER(ca_pdf.code))
+        LEFT JOIN cloud_assets ca_img ON ca_img.type = 'image' AND LOWER(p.indice) = LOWER(ca_img.code)
+        LEFT JOIN cloud_assets ca_img_nota ON ca_img_nota.type = 'image' AND LOWER(p.nota1) = LOWER(ca_img_nota.code)
+        ORDER BY CAST(p.indice AS BIGINT) DESC LIMIT 300
+      `);
       if (esterniRes.rows && esterniRes.rows.length > 0) {
         rows = esterniRes.rows;
       }
@@ -1482,17 +1490,17 @@ app.get('/api/portal/cars', async (req, res) => {
 
       // PDF resolution: check local disk first, fallback to cloud database assets
       const localMatchedPdf = targetPdfCode ? findPdfForCode(targetPdfCode) : null;
-      const hasPdf = Boolean(localMatchedPdf || r.has_pdf);
-      const pdfFilename = localMatchedPdf || r.pdf_filename || (hasPdf && targetPdfCode ? `${targetPdfCode}.pdf` : null);
+      const hasPdf = Boolean(localMatchedPdf || r.resolved_pdf_url || r.has_pdf);
+      const pdfFilename = localMatchedPdf || r.resolved_pdf_filename || r.pdf_filename || (hasPdf && targetPdfCode ? `${targetPdfCode}.pdf` : null);
       const pdfUrl = localMatchedPdf 
         ? `/uploads/preventivi_pdf/${localMatchedPdf}` 
-        : (r.pdf_url || (hasPdf && targetPdfCode ? `/uploads/preventivi_pdf/${targetPdfCode}.pdf` : null));
+        : (r.resolved_pdf_url || r.pdf_url || (hasPdf && targetPdfCode ? `/uploads/preventivi_pdf/${targetPdfCode}.pdf` : null));
 
       // Image resolution: check local disk first, fallback to cloud database assets
       const localMatchedImage = findImageForCar(codeIndice, r.modello || r.modello_vettura);
       const imageUrl = localMatchedImage 
         ? `/uploads/cars/${localMatchedImage}` 
-        : (r.image_url || null);
+        : (r.resolved_image_url || r.image_url || null);
 
       return {
         id: codeIndice,
@@ -1796,6 +1804,31 @@ app.post('/api/portal/update-pdf-asset', async (req, res) => {
     res.json({ success: true, message: `PDF asset updated for ${cleanCode}` });
   } catch (err) {
     console.error('Error updating PDF asset:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST endpoint to update car image cloud asset and portale_preventivi_esterni from sync.py
+app.post('/api/portal/update-image-asset', async (req, res) => {
+  try {
+    const syncKey = req.headers['x-sync-key'];
+    if (syncKey !== 'rossomandi_secret_sync_2026') {
+      return res.status(403).json({ error: 'Unauthorized sync key' });
+    }
+    const { code, filename, cloud_url, file_size } = req.body;
+    if (!code || !cloud_url) {
+      return res.status(400).json({ error: 'Missing code or cloud_url' });
+    }
+    const cleanCode = String(code).trim().toLowerCase();
+    await storeCloudAsset(cleanCode, 'image', cloud_url, filename || `${cleanCode}.jpg`, file_size || 0);
+    await db.query(`
+      UPDATE portale_preventivi_esterni 
+      SET image_url = $1 
+      WHERE LOWER(nota1) = $2 OR LOWER(indice) = $2
+    `, [cloud_url, cleanCode]);
+    res.json({ success: true, message: `Image asset updated for ${cleanCode}` });
+  } catch (err) {
+    console.error('Error updating Image asset:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1084,6 +1084,84 @@ def sync_preventivi_pdfs_to_supabase():
     except Exception as e:
         pass
 
+_tracked_img_stats = {}
+
+def sync_car_images_to_supabase():
+    """Scans C:\Users\Public\Esterni photo and uploads new or updated car images to Supabase cloud storage."""
+    img_dirs = [r"C:\Users\Public\Esterni photo", r"C:\Users\Public\Cars_Images"]
+    valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+    for img_dir in img_dirs:
+        if not os.path.exists(img_dir):
+            continue
+        try:
+            files = os.listdir(img_dir)
+            for f in files:
+                lower = f.lower()
+                if not any(lower.endswith(ext) for ext in valid_exts):
+                    continue
+                fpath = os.path.join(img_dir, f)
+                try:
+                    stat = os.stat(fpath)
+                except Exception:
+                    continue
+                key = (stat.st_size, int(stat.st_mtime))
+                if _tracked_img_stats.get(f) == key:
+                    continue
+                
+                code = lower[:lower.rfind('.')].strip()
+                content_type = "image/png" if lower.endswith('.png') else "image/jpeg"
+                try:
+                    with open(fpath, "rb") as img_file:
+                        file_bytes = img_file.read()
+                except Exception:
+                    continue
+                
+                encoded_f = urllib.parse.quote(f)
+                upload_url = f"{SUPABASE_STORAGE_URL}/storage/v1/object/car-images/{encoded_f}"
+                req = urllib.request.Request(
+                    upload_url,
+                    data=file_bytes,
+                    headers={
+                        "Authorization": f"Bearer {SUPABASE_KEY}",
+                        "Content-Type": content_type,
+                        "x-upsert": "true"
+                    },
+                    method="POST"
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        if resp.status in (200, 201, 409):
+                            ts = int(time.time() * 1000)
+                            cloud_url = f"{SUPABASE_STORAGE_URL}/storage/v1/object/public/car-images/{encoded_f}?t={ts}"
+                            _tracked_img_stats[f] = key
+                            print(f"[Supabase Image Sync] Successfully uploaded {f} ({stat.st_size} bytes) to Cloud!", flush=True)
+                            
+                            update_payload = json.dumps({
+                                "code": code,
+                                "filename": f,
+                                "cloud_url": cloud_url,
+                                "file_size": stat.st_size
+                            }).encode("utf-8")
+                            for base_url in [
+                                "https://rossomandi-auto-srl.vercel.app/api/portal/update-image-asset",
+                                "https://rossomandi-backend.vercel.app/api/portal/update-image-asset",
+                                "http://localhost:5000/api/portal/update-image-asset"
+                            ]:
+                                try:
+                                    u_req = urllib.request.Request(
+                                        base_url,
+                                        data=update_payload,
+                                        headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
+                                    )
+                                    with urllib.request.urlopen(u_req, timeout=8) as u_resp:
+                                        pass
+                                except Exception:
+                                    pass
+                except Exception as up_err:
+                    pass
+        except Exception as e:
+            pass
+
 def push_tab_preventivi_esterni_to_server(cars):
     """Pushes tabPreventiviEsterni vehicles to Portale table on cloud and local server."""
     if not cars:
@@ -1181,6 +1259,9 @@ def main():
 
             # Auto-sync new and updated Preventivi PDFs from C:\Users\Public\Preventivi_PDF to Cloud Storage
             sync_preventivi_pdfs_to_supabase()
+
+            # Auto-sync new and updated Car Photos from C:\Users\Public\Esterni photo to Cloud Storage
+            sync_car_images_to_supabase()
 
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
