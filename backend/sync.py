@@ -8,6 +8,7 @@ import shutil
 import socket
 import threading
 import urllib.request
+import urllib.parse
 import json
 import tempfile
 import uuid
@@ -1010,20 +1011,118 @@ def fetch_tab_preventivi_esterni(db_path):
             try: os.remove(temp_path)
             except Exception: pass
 
-def push_tab_preventivi_esterni_to_server(cars):
-    """Pushes tabPreventiviEsterni vehicles to Portale table on local server."""
-    if not cars:
+SUPABASE_STORAGE_URL = "https://ngvcirlrsgqrzhgawubu.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ndmNpcmxyc2dxcnpoZ2F3dWJ1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc2MTUxMSwiZXhwIjoyMTA0MzM3NTExfQ.u8yLJCqgLJm7nBzjSC9we1RGFL3v94-S3Iq71xSBMGM"
+_tracked_pdf_stats = {}
+
+def sync_preventivi_pdfs_to_supabase():
+    """Scans C:\Users\Public\Preventivi_PDF and uploads new or updated PDFs to Supabase cloud storage."""
+    pdf_dir = r"C:\Users\Public\Preventivi_PDF"
+    if not os.path.exists(pdf_dir):
         return
     try:
-        req_data = json.dumps({"cars": cars}).encode("utf-8")
+        files = os.listdir(pdf_dir)
+        for f in files:
+            if not f.lower().endswith(".pdf"):
+                continue
+            fpath = os.path.join(pdf_dir, f)
+            try:
+                stat = os.stat(fpath)
+            except Exception:
+                continue
+            key = (stat.st_size, int(stat.st_mtime))
+            if _tracked_pdf_stats.get(f) == key:
+                continue
+            
+            code = f.lower().replace(".pdf", "").strip()
+            with open(fpath, "rb") as pdf_file:
+                file_bytes = pdf_file.read()
+            
+            encoded_f = urllib.parse.quote(f)
+            upload_url = f"{SUPABASE_STORAGE_URL}/storage/v1/object/preventivi-pdf/{encoded_f}"
+            req = urllib.request.Request(
+                upload_url,
+                data=file_bytes,
+                headers={
+                    "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/pdf",
+                    "x-upsert": "true"
+                },
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    if resp.status in (200, 201, 409):
+                        ts = int(time.time() * 1000)
+                        cloud_url = f"{SUPABASE_STORAGE_URL}/storage/v1/object/public/preventivi-pdf/{encoded_f}?t={ts}"
+                        _tracked_pdf_stats[f] = key
+                        print(f"[Supabase PDF Sync] Successfully uploaded {f} ({stat.st_size} bytes) to Cloud!", flush=True)
+                        
+                        update_payload = json.dumps({
+                            "code": code,
+                            "filename": f,
+                            "cloud_url": cloud_url,
+                            "file_size": stat.st_size
+                        }).encode("utf-8")
+                        for base_url in [
+                            "https://rossomandi-auto-srl.vercel.app/api/portal/update-pdf-asset",
+                            "https://rossomandi-backend.vercel.app/api/portal/update-pdf-asset",
+                            "http://localhost:5000/api/portal/update-pdf-asset"
+                        ]:
+                            try:
+                                u_req = urllib.request.Request(
+                                    base_url,
+                                    data=update_payload,
+                                    headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
+                                )
+                                with urllib.request.urlopen(u_req, timeout=8) as u_resp:
+                                    pass
+                            except Exception:
+                                pass
+            except Exception as up_err:
+                pass
+    except Exception as e:
+        pass
+
+def push_tab_preventivi_esterni_to_server(cars):
+    """Pushes tabPreventiviEsterni vehicles to Portale table on cloud and local server."""
+    if not cars:
+        return
+    req_data = json.dumps({"cars": cars}).encode("utf-8")
+
+    # 1. Push to live Cloud server (Vercel)
+    try:
+        cloud_url = "https://rossomandi-auto-srl.vercel.app/api/portal/sync-preventivi-esterni"
+        req_cloud = urllib.request.Request(
+            cloud_url,
+            data=req_data,
+            headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
+        )
+        with urllib.request.urlopen(req_cloud, timeout=30) as resp:
+            print(f"[tabPreventiviEsterni Cloud Sync] Pushed {len(cars)} vehicles to Live Cloud! (HTTP {resp.status})", flush=True)
+    except Exception as err:
+        try:
+            fb_url = "https://rossomandi-backend.vercel.app/api/portal/sync-preventivi-esterni"
+            fb_req = urllib.request.Request(
+                fb_url,
+                data=req_data,
+                headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
+            )
+            with urllib.request.urlopen(fb_req, timeout=30) as resp:
+                print(f"[tabPreventiviEsterni Cloud Sync] Pushed {len(cars)} vehicles to Live Cloud via fallback! (HTTP {resp.status})", flush=True)
+        except Exception:
+            pass
+
+    # 2. Push to local Node server (if running)
+    try:
         local_url = "http://localhost:5000/api/portal/sync-preventivi-esterni"
         req_local = urllib.request.Request(
             local_url,
             data=req_data,
             headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
         )
-        with urllib.request.urlopen(req_local, timeout=10) as resp:
-            print(f"[tabPreventiviEsterni Sync] Pushed {len(cars)} vehicles to Portale! (HTTP {resp.status})", flush=True)
+        with urllib.request.urlopen(req_local, timeout=5) as resp:
+            pass
     except Exception as err:
         pass
 
@@ -1079,6 +1178,9 @@ def main():
             if portale_data:
                 print(f"[tabPreventiviEsterni] Read {len(portale_data)} vehicles for Portale. Syncing...", flush=True)
                 push_tab_preventivi_esterni_to_server(portale_data)
+
+            # Auto-sync new and updated Preventivi PDFs from C:\Users\Public\Preventivi_PDF to Cloud Storage
+            sync_preventivi_pdfs_to_supabase()
 
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)

@@ -70,10 +70,10 @@ async function storeCloudAsset(code, type, cloudUrl, filename, fileSize) {
 async function getCloudAsset(code, type) {
   try {
     const r = await db.query(
-      `SELECT cloud_url, filename FROM cloud_assets WHERE code = $1 AND type = $2`,
+      `SELECT cloud_url, filename, file_size FROM cloud_assets WHERE code = $1 AND type = $2`,
       [String(code).toLowerCase(), type]
     );
-    return r.rows[0]?.cloud_url || null;
+    return r.rows[0] || null;
   } catch (e) { return null; }
 }
 // ────────────────────────────────────────────────────────────────────────────
@@ -1209,9 +1209,10 @@ async function syncLocalAssetsToCloud() {
         if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
         const code = lower.substring(0, lower.lastIndexOf('.')).trim();
         const existing = await getCloudAsset(code, 'image');
-        if (!existing) {
-          const filePath = path.join(dir, f);
-          const stat = fs.statSync(filePath);
+        const filePath = path.join(dir, f);
+        const stat = fs.statSync(filePath);
+        const isModified = !existing || !existing.cloud_url || String(stat.size) !== String(existing.file_size);
+        if (isModified) {
           const fileBuffer = fs.readFileSync(filePath);
           const contentType = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
           const cloudUrl = await uploadToSupabase('car-images', f, fileBuffer, contentType);
@@ -1222,7 +1223,7 @@ async function syncLocalAssetsToCloud() {
               SET image_url = $1 
               WHERE LOWER(indice) = $2 OR LOWER(indice) = $3
             `, [cloudUrl, code, `idx_${code}`]).catch(() => {});
-            console.log(`[Supabase Auto-Sync] Synced car image ${f} to cloud!`);
+            console.log(`[Supabase Auto-Sync] Synced car image ${f} (${stat.size} bytes) to cloud!`);
           }
         }
       }
@@ -1238,9 +1239,10 @@ async function syncLocalAssetsToCloud() {
         if (!lower.endsWith('.pdf')) continue;
         const code = lower.replace('.pdf', '').trim();
         const existing = await getCloudAsset(code, 'pdf');
-        if (!existing) {
-          const filePath = path.join(dir, f);
-          const stat = fs.statSync(filePath);
+        const filePath = path.join(dir, f);
+        const stat = fs.statSync(filePath);
+        const isModified = !existing || !existing.cloud_url || String(stat.size) !== String(existing.file_size);
+        if (isModified) {
           const fileBuffer = fs.readFileSync(filePath);
           const cloudUrl = await uploadToSupabase('preventivi-pdf', f, fileBuffer, 'application/pdf');
           if (cloudUrl) {
@@ -1250,7 +1252,7 @@ async function syncLocalAssetsToCloud() {
               SET has_pdf = true, pdf_filename = $1, pdf_url = $2 
               WHERE LOWER(nota1) = $3 OR LOWER(indice) = $3
             `, [f, cloudUrl, code]).catch(() => {});
-            console.log(`[Supabase Auto-Sync] Synced PDF ${f} to cloud!`);
+            console.log(`[Supabase Auto-Sync] Synced PDF ${f} (${stat.size} bytes) to cloud!`);
           }
         }
       }
@@ -1770,6 +1772,31 @@ app.delete('/api/portal/pdf/:code', async (req, res) => {
   } catch (err) {
     console.error('Error deleting PDF:', err);
     res.status(500).json({ error: 'Errore durante la cancellazione del PDF: ' + err.message });
+  }
+});
+
+// POST endpoint to update cloud asset and portale_preventivi_esterni from sync.py
+app.post('/api/portal/update-pdf-asset', async (req, res) => {
+  try {
+    const syncKey = req.headers['x-sync-key'];
+    if (syncKey !== 'rossomandi_secret_sync_2026') {
+      return res.status(403).json({ error: 'Unauthorized sync key' });
+    }
+    const { code, filename, cloud_url, file_size } = req.body;
+    if (!code || !cloud_url) {
+      return res.status(400).json({ error: 'Missing code or cloud_url' });
+    }
+    const cleanCode = String(code).trim().toLowerCase();
+    await storeCloudAsset(cleanCode, 'pdf', cloud_url, filename || `${cleanCode}.pdf`, file_size || 0);
+    await db.query(`
+      UPDATE portale_preventivi_esterni 
+      SET has_pdf = true, pdf_filename = $1, pdf_url = $2 
+      WHERE LOWER(nota1) = $3 OR LOWER(indice) = $3
+    `, [filename || `${cleanCode}.pdf`, cloud_url, cleanCode]);
+    res.json({ success: true, message: `PDF asset updated for ${cleanCode}` });
+  } catch (err) {
+    console.error('Error updating PDF asset:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
