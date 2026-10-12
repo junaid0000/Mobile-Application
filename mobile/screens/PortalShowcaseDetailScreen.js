@@ -97,7 +97,9 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
         if (res.data && res.data.exists) {
           setHasPdf(true);
           if (res.data.filename) setPdfFilename(res.data.filename);
-          if (res.data.url) setPdfUrl(res.data.url);
+          const rawUrl = res.data.url;
+          const cleanUrl = (rawUrl && typeof rawUrl === "object") ? (rawUrl.cloud_url || rawUrl.url) : rawUrl;
+          if (cleanUrl) setPdfUrl(cleanUrl);
         }
       })
       .catch(() => {});
@@ -119,8 +121,12 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
       else Alert.alert("Avviso", msg);
       return;
     }
-    const currentPdfUrl = (pdfUrl && (pdfUrl.startsWith("http://") || pdfUrl.startsWith("https://")))
-      ? pdfUrl
+    let rawPdf = pdfUrl;
+    if (rawPdf && typeof rawPdf === "object") {
+      rawPdf = rawPdf.cloud_url || rawPdf.url;
+    }
+    const currentPdfUrl = (rawPdf && typeof rawPdf === "string" && (rawPdf.startsWith("http://") || rawPdf.startsWith("https://")))
+      ? rawPdf
       : `${BASE_URL}/api/portal/pdf/${targetPdfCode}`;
     const cacheBuster = currentPdfUrl.includes("?") ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
     const fullUrl = `${currentPdfUrl}${cacheBuster}`;

@@ -71,7 +71,9 @@ export default function PortalCarDetailScreen({ navigation, route }) {
       if (res.data && res.data.exists) {
         setHasPdf(true);
         setPdfFilename(res.data.filename);
-        setPdfUrl(res.data.url);
+        const rawUrl = res.data.url;
+        const cleanUrl = (rawUrl && typeof rawUrl === 'object') ? (rawUrl.cloud_url || rawUrl.url) : rawUrl;
+        setPdfUrl(cleanUrl);
       } else {
         setHasPdf(false);
       }
@@ -101,7 +103,11 @@ export default function PortalCarDetailScreen({ navigation, route }) {
 
   // Handle viewing / downloading the PDF
   const handleOpenPdf = () => {
-    const rawUrl = pdfUrl || `${BASE_URL}/api/portal/pdf/${targetPdfCode}`;
+    let rawUrl = pdfUrl;
+    if (rawUrl && typeof rawUrl === 'object') {
+      rawUrl = rawUrl.cloud_url || rawUrl.url;
+    }
+    rawUrl = (rawUrl && typeof rawUrl === 'string') ? rawUrl : `${BASE_URL}/api/portal/pdf/${targetPdfCode}`;
     const cacheBuster = rawUrl.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
     const fullUrl = (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
       ? `${rawUrl}${cacheBuster}`

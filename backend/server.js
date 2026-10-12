@@ -1663,8 +1663,8 @@ app.get('/api/portal/pdf-status/:code', async (req, res) => {
   // 2. Check cloud_assets in database
   try {
     const cloudAsset = await getCloudAsset(cleanCode, 'pdf');
-    if (cloudAsset) {
-      return res.json({ exists: true, filename: `${cleanCode}.pdf`, url: cloudAsset });
+    if (cloudAsset && cloudAsset.cloud_url) {
+      return res.json({ exists: true, filename: cloudAsset.filename || `${cleanCode}.pdf`, url: cloudAsset.cloud_url });
     }
     const dbCar = await db.query(
       'SELECT pdf_filename, pdf_url FROM portale_preventivi_esterni WHERE (LOWER(nota1) = $1 OR LOWER(indice) = $1) AND has_pdf = true LIMIT 1',
@@ -1699,7 +1699,7 @@ app.get('/api/portal/pdf/:code', async (req, res) => {
   // 2. Cloud Supabase Storage redirect
   try {
     const cloudAsset = await getCloudAsset(cleanCode, 'pdf');
-    if (cloudAsset) return res.redirect(302, cloudAsset);
+    if (cloudAsset && cloudAsset.cloud_url) return res.redirect(302, cloudAsset.cloud_url);
 
     const dbCar = await db.query(
       'SELECT pdf_url FROM portale_preventivi_esterni WHERE (LOWER(nota1) = $1 OR LOWER(indice) = $1) AND has_pdf = true LIMIT 1',
