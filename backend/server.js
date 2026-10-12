@@ -1583,10 +1583,11 @@ app.post('/api/portal/sync-preventivi-esterni', async (req, res) => {
       
       chunk.forEach((c, idx) => {
         const offset = idx * 8;
+        const cleanMarca = c.marca ? String(c.marca).trim().toUpperCase().replace(/1$/, '') : null;
         valueStrings.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, CURRENT_TIMESTAMP)`);
         values.push(
           String(c.indice),
-          c.marca || null,
+          cleanMarca,
           c.modello || null,
           c.colore_vn || null,
           c.tipo_appunt_vendita || null,
@@ -1612,6 +1613,33 @@ app.post('/api/portal/sync-preventivi-esterni', async (req, res) => {
       `;
       await db.query(batchQuery, values);
     }
+
+    // Clean up any old cars that are no longer in Access tabPreventiviEsterni
+    const activeIndices = cars.map(c => String(c.indice));
+    if (activeIndices.length > 0) {
+      await db.query(`
+        DELETE FROM portale_preventivi_esterni
+        WHERE indice NOT IN (${activeIndices.map((_, i) => `$${i + 1}`).join(', ')})
+      `, activeIndices);
+    }
+
+    // Auto-link any matching cloud assets (PDFs and images)
+    await db.query(`
+      UPDATE portale_preventivi_esterni p
+      SET 
+        pdf_url = ca.cloud_url,
+        pdf_filename = ca.filename,
+        has_pdf = true
+      FROM cloud_assets ca
+      WHERE ca.type = 'pdf' AND (LOWER(p.nota1) = LOWER(ca.code) OR LOWER(p.indice) = LOWER(ca.code))
+        AND (p.pdf_url IS NULL OR p.pdf_url = '');
+
+      UPDATE portale_preventivi_esterni p
+      SET image_url = ca.cloud_url
+      FROM cloud_assets ca
+      WHERE ca.type = 'image' AND (LOWER(p.indice) = LOWER(ca.code) OR LOWER(p.nota1) = LOWER(ca.code))
+        AND (p.image_url IS NULL OR p.image_url = '');
+    `).catch(() => {});
 
     console.log(`[tabPreventiviEsterni] Synced ${cars.length} vehicles into portale_preventivi_esterni!`);
     res.json({ success: true, count: cars.length });

@@ -231,7 +231,7 @@ function LuxurySidebar({
         {/* Marca Auto */}
         <View style={styles.filterGroup}>
           <Text style={styles.groupLabel}>Marca auto</Text>
-          {brands.slice(0, 10).map((b) => {
+          {brands.map((b) => {
             const isChecked = activeBrands.includes(b);
             return (
               <TouchableOpacity
@@ -316,7 +316,7 @@ export default function PortalShowcaseScreen({ navigation, route }) {
     }, [fetchCars])
   );
 
-  const brands = useMemo(() => [...new Set(cars.map((c) => c.marca).filter(Boolean))].sort(), [cars]);
+  const brands = useMemo(() => [...new Set(cars.map((c) => (c.marca || "").toUpperCase().trim().replace(/1$/, "")).filter(Boolean))].sort(), [cars]);
   const tipi = useMemo(() => [...new Set(cars.map((c) => c.tipo_appunt_vendita).filter(Boolean))].sort(), [cars]);
 
   const onToggleBrand = (b) => {
@@ -353,7 +353,8 @@ export default function PortalShowcaseScreen({ navigation, route }) {
       );
     }
     if (activeBrands.length > 0) {
-      list = list.filter((c) => activeBrands.includes(c.marca));
+      const upperActive = activeBrands.map((b) => b.toUpperCase());
+      list = list.filter((c) => upperActive.includes((c.marca || "").toUpperCase().trim().replace(/1$/, "")));
     }
     if (activeTipi.length > 0) {
       list = list.filter((c) => activeTipi.includes(c.tipo_appunt_vendita));
