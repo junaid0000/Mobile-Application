@@ -444,6 +444,17 @@ export default function PortalCarDetailScreen({ navigation, route }) {
                 ) : (
                   <>
                     <TouchableOpacity
+                      style={[styles.pdfActionBtn, styles.emailPdfBtn]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        handleToggleAttachPdf(false);
+                        setEmailModalVisible(true);
+                      }}
+                    >
+                      <Text style={styles.emailPdfBtnText}>✉️ Invia Email al Cliente</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
                       style={[styles.pdfActionBtn, styles.uploadPdfBtn]}
                       activeOpacity={0.85}
                       onPress={handleUploadClick}

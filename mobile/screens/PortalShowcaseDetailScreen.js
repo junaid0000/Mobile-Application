@@ -601,26 +601,47 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
                     </View>
                   </View>
                 ) : (
-                  <TouchableOpacity
-                    style={styles.btnUploadBigLux}
-                    onPress={handleUploadClick}
-                    activeOpacity={0.85}
-                    disabled={uploading}
-                  >
-                    {uploading ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <View style={styles.btnUploadBigIconCircle}>
-                          <Text style={styles.btnUploadBigIcon}>📤</Text>
+                  <View style={styles.pdfButtonsContainer}>
+                    <View style={styles.pdfPrimaryRow}>
+                      <TouchableOpacity
+                        style={styles.btnEmailLux}
+                        onPress={() => {
+                          handleToggleAttachPdf(false);
+                          setEmailModalVisible(true);
+                        }}
+                        activeOpacity={0.82}
+                      >
+                        <View style={styles.btnIconCircleGreen}>
+                          <Text style={styles.btnIconText}>✉️</Text>
                         </View>
-                        <View style={{ alignItems: "center" }}>
-                          <Text style={styles.btnUploadBigTitle}>Carica Preventivo PDF</Text>
-                          <Text style={styles.btnUploadBigSub}>Da Computer / Chiavetta USB ({targetPdfCode}.pdf)</Text>
+                        <View style={styles.btnTextCol}>
+                          <Text style={styles.btnEmailTitle}>Invia Email al Cliente</Text>
+                          <Text style={styles.btnEmailSub}>Spedisci preventivo via email</Text>
                         </View>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.btnUploadBigLux}
+                      onPress={handleUploadClick}
+                      activeOpacity={0.85}
+                      disabled={uploading}
+                    >
+                      {uploading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <View style={styles.btnUploadBigIconCircle}>
+                            <Text style={styles.btnUploadBigIcon}>📤</Text>
+                          </View>
+                          <View style={{ alignItems: "center" }}>
+                            <Text style={styles.btnUploadBigTitle}>Carica Preventivo PDF</Text>
+                            <Text style={styles.btnUploadBigSub}>Da Computer / Chiavetta USB ({targetPdfCode}.pdf)</Text>
+                          </View>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
 
