@@ -35,7 +35,7 @@ export default function SignupScreen({ navigation }) {
     const isKnownAdminEmail = emailLower.includes('junaid') || emailLower.includes('lorenzo') || emailLower.includes('francesco') || emailLower.includes('valentina') || emailLower.includes('admin') || emailLower.endsWith('@rossomandi.com');
 
     if (role === 'admin' && !isKnownAdminEmail && !adminCode.trim()) {
-      Alert.alert('Errore', 'Inserisci il Codice di Sicurezza Amministratore (es. 1234)');
+      Alert.alert('Errore', 'Inserisci il Codice di Sicurezza Amministratore');
       return;
     }
 
@@ -200,7 +200,7 @@ export default function SignupScreen({ navigation }) {
             <Text style={styles.securityCodeLabel}>🔒 Codice di Sicurezza Aziendale *:</Text>
             <TextInput
               style={[styles.input, { borderColor: '#00E5FF', marginBottom: 0 }]}
-              placeholder="Inserisci codice sicurezza (es. rossomandi)"
+              placeholder="Inserisci codice sicurezza aziendale"
               placeholderTextColor="#64748B"
               autoCapitalize="none"
               value={securityCode}

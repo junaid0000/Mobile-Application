@@ -22,24 +22,12 @@ import { BASE_URL } from "../config/apiConfig";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// ── Professional Brand Fallback Images ──
-const BRAND_IMAGES = {
-  OPEL:       "https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&w=1200&q=80",
-  FIAT:       "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=1200&q=80",
-  KIA:        "https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=1200&q=80",
-  TOYOTA:     "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
-  TOYOTA1:    "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
-  BYD:        "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80",
-  DEFAULT:    "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80",
-};
-
 function getCarImage(item) {
   if (item?.image_url) {
     if (item.image_url.startsWith("http")) return item.image_url;
     return `${BASE_URL}${item.image_url.startsWith("/") ? "" : "/"}${item.image_url}`;
   }
-  const brand = (item?.marca || "").toUpperCase().trim();
-  return BRAND_IMAGES[brand] || BRAND_IMAGES.DEFAULT;
+  return null;
 }
 
 function detectFuelType(item) {
@@ -51,18 +39,9 @@ function detectFuelType(item) {
   return { label: "Benzina", color: "#F472B6" };
 }
 
-function detectGearbox(item) {
-  const text = (item?.modello || "").toUpperCase();
-  if (text.includes("AUT") || text.includes("EDCT") || text.includes("AT8") || text.includes("DSG")) {
-    return "Automatico";
-  }
-  return "Manuale";
-}
-
 // ── Compact, Ultra-Beautiful Car Card ──
 function LuxuryCarCard({ item, onPress }) {
   const fuel = detectFuelType(item);
-  const gearbox = detectGearbox(item);
   const price = parseFloat(item.rata_f_zero || 0);
   const rimborso = parseFloat(item.rimborso || 0);
   const imgUri = getCarImage(item);
@@ -124,11 +103,18 @@ function LuxuryCarCard({ item, onPress }) {
 
           {/* HD Image Frame - Full Car Visibility */}
           <View style={styles.cardImageFrame}>
-            <Image
-              source={{ uri: imgUri }}
-              style={styles.cardImage}
-              resizeMode="contain"
-            />
+            {imgUri ? (
+              <Image
+                source={{ uri: imgUri }}
+                style={styles.cardImage}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={styles.cardNoImageBox}>
+                <Text style={styles.cardNoImageIcon}>🚗</Text>
+                <Text style={styles.cardNoImageText}>Nessuna foto disponibile</Text>
+              </View>
+            )}
             {/* Subtle Gradient Shadow under car */}
             <View style={styles.imageOverlayGlow} />
           </View>
@@ -138,11 +124,6 @@ function LuxuryCarCard({ item, onPress }) {
             <View style={styles.specItem}>
               <Text style={styles.specIcon}>⛽</Text>
               <Text style={[styles.specText, { color: fuel.color }]}>{fuel.label}</Text>
-            </View>
-            <View style={styles.specDivider} />
-            <View style={styles.specItem}>
-              <Text style={styles.specIcon}>⚙️</Text>
-              <Text style={styles.specText}>{gearbox}</Text>
             </View>
             {item.km ? (
               <>
@@ -1111,6 +1092,23 @@ const styles = StyleSheet.create({
   cardImage: {
     width: "100%",
     height: "100%",
+  },
+  cardNoImageBox: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#08101E",
+  },
+  cardNoImageIcon: {
+    fontSize: 34,
+    opacity: 0.35,
+    marginBottom: 4,
+  },
+  cardNoImageText: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
   },
   imageOverlayGlow: {
     position: "absolute",

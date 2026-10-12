@@ -22,31 +22,12 @@ import { BASE_URL } from "../config/apiConfig";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const IS_WIDE = SCREEN_WIDTH > 860;
 
-const BRAND_IMAGES = {
-  OPEL:       "https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&w=1200&q=80",
-  FIAT:       "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=1200&q=80",
-  JEEP:       "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1200&q=80",
-  RENAULT:    "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80",
-  PEUGEOT:    "https://images.unsplash.com/photo-1580273916550-e323be2ae537?auto=format&fit=crop&w=1200&q=80",
-  CITROEN:    "https://images.unsplash.com/photo-1616422285623-13ff0162193c?auto=format&fit=crop&w=1200&q=80",
-  ALFA:       "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80",
-  VOLKSWAGEN: "https://images.unsplash.com/photo-1471444308404-58537446522c?auto=format&fit=crop&w=1200&q=80",
-  BMW:        "https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=1200&q=80",
-  TOYOTA:     "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
-  FORD:       "https://images.unsplash.com/photo-1551830820-330a71b99659?auto=format&fit=crop&w=1200&q=80",
-  KIA:        "https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=1200&q=80",
-  TOYOTA1:    "https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80",
-  BYD:        "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80",
-  DEFAULT:    "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80",
-};
-
 function getCarImage(item) {
   if (item?.image_url) {
     if (item.image_url.startsWith("http")) return item.image_url;
     return `${BASE_URL}${item.image_url.startsWith("/") ? "" : "/"}${item.image_url}`;
   }
-  const brand = (item?.marca || "").toUpperCase().trim();
-  return BRAND_IMAGES[brand] || BRAND_IMAGES.DEFAULT;
+  return null;
 }
 
 function detectFuelType(item) {
@@ -56,14 +37,6 @@ function detectFuelType(item) {
   if (text.includes("DIESEL") || text.includes("HDI"))  return { label: "Diesel Eco", color: "#f59e0b", icon: "⛽" };
   if (text.includes("GPL") || text.includes("METANO")) return { label: "GPL / Bifuel", color: "#84cc16", icon: "🍃" };
   return { label: "Benzina Euro 6D", color: "#a78bfa", icon: "⛽" };
-}
-
-function detectGearbox(item) {
-  const text = (item?.modello || "").toUpperCase();
-  if (text.includes("AUT") || text.includes("EDCT") || text.includes("AT8") || text.includes("DSG")) {
-    return "Automatico";
-  }
-  return "Manuale";
 }
 
 const C = {
@@ -94,7 +67,6 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
   const fuel = detectFuelType(car);
-  const gearbox = detectGearbox(car);
   const imgUri = getCarImage(car);
   const brand = (car?.marca || "N/A").toUpperCase();
   const rawModel = car?.modello || "Veicolo non specificato";
@@ -403,17 +375,24 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
         {/* ── Vehicle Hero Banner with Clean Image & Tap to Zoom ── */}
         <View style={styles.heroSection}>
           <View style={styles.heroImageCard}>
-            <TouchableOpacity
-              activeOpacity={0.92}
-              onPress={openLightbox}
-              style={styles.heroImageTouchable}
-            >
-              <Image
-                source={{ uri: imgUri }}
-                style={styles.heroImage}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
+            {imgUri ? (
+              <TouchableOpacity
+                activeOpacity={0.92}
+                onPress={openLightbox}
+                style={styles.heroImageTouchable}
+              >
+                <Image
+                  source={{ uri: imgUri }}
+                  style={styles.heroImage}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.heroImageTouchable, { justifyContent: 'center', alignItems: 'center', minHeight: 220, backgroundColor: '#070E1A' }]}>
+                <Text style={{ fontSize: 52, opacity: 0.35, marginBottom: 8 }}>🚗</Text>
+                <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '600' }}>Nessuna foto disponibile</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -438,12 +417,6 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
                   <Text style={styles.specIcon}>{fuel.icon}</Text>
                   <Text style={styles.specLabel}>Alimentazione</Text>
                   <Text style={[styles.specVal, { color: fuel.color }]}>{fuel.label}</Text>
-                </View>
-
-                <View style={styles.specBox}>
-                  <Text style={styles.specIcon}>⚙️</Text>
-                  <Text style={styles.specLabel}>Cambio</Text>
-                  <Text style={styles.specVal}>{gearbox}</Text>
                 </View>
 
                 <View style={styles.specBox}>

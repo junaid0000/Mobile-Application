@@ -583,23 +583,23 @@ app.post('/api/auth/signup', async (req, res) => {
 
     const emailLower = (email || '').toLowerCase().trim();
     const isOfficialRossomandiEmail = emailLower.endsWith('@rossomandi.com');
-    const providedCode = (security_code || admin_code || '').trim().toLowerCase();
-    const validCompanyCodes = ['rossomandi', 'rosso2026', '1234', 'admin2026', 'admin123'];
+    const providedCode = (security_code || admin_code || '').trim();
+    const REQUIRED_SECURITY_CODE = 'AppRossomandi123!';
 
     // 1. Admin Security Check
     if (role === 'admin') {
       const validAdminEmails = ['admin@rossomandi.com', 'lorenzo@rossomandi.com', 'francesco@rossomandi.com', 'valentina@rossomandi.com', 'junaid@rossomandi.com', 'junaidmunir.janjua@rossomandi.com', 'junaidmunir@rossomandi.com'];
       const isOfficialAdminEmail = validAdminEmails.includes(emailLower) || isOfficialRossomandiEmail;
-      const isAdminPasscodeValid = providedCode === 'admin2026' || providedCode === '1234' || providedCode === 'rossomandi' || providedCode === 'admin123';
+      const isAdminPasscodeValid = providedCode === REQUIRED_SECURITY_CODE;
 
       if (!isOfficialAdminEmail && !isAdminPasscodeValid) {
         return res.status(403).json({ error: 'Codice di sicurezza Amministratore non valido o email non autorizzata.' });
       }
     } else {
       // 2. Company Security Code Check for all new users (External, Staff, Seller)
-      const isCodeValid = validCompanyCodes.includes(providedCode);
+      const isCodeValid = providedCode === REQUIRED_SECURITY_CODE;
       if (!isOfficialRossomandiEmail && !isCodeValid) {
-        return res.status(403).json({ error: 'Codice di Sicurezza Aziendale non valido. Inserisci il codice "rossomandi" fornito dall\'ufficio.' });
+        return res.status(403).json({ error: 'Codice di Sicurezza Aziendale non valido. Inserisci il codice di sicurezza corretto.' });
       }
     }
 

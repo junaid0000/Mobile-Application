@@ -954,7 +954,8 @@ def fetch_tab_preventivi_esterni(db_path):
             d.[contr amb],
             d.[numero rate],
             d.[importo rata],
-            mp.Nota1
+            mp.Nota1,
+            mp.Marca
         FROM ([Database] d 
         LEFT JOIN tblContrattiPredefiniti cp ON d.Indice = cp.Indice) 
         LEFT JOIN tblModelliPredefiniti mp ON cp.IDModello = mp.IDModello 
@@ -970,7 +971,8 @@ def fetch_tab_preventivi_esterni(db_path):
                 indice = str(r[0]).strip() if r[0] else None
                 if not indice:
                     continue
-                marca = str(r[1]).strip() if r[1] else None
+                raw_marca = str(r[1]).strip() if r[1] else (str(r[9]).strip() if len(r) > 9 and r[9] else None)
+                marca = raw_marca.upper().rstrip('1') if raw_marca else None
                 modello = str(r[2]).strip() if r[2] else None
                 colore_vn = str(r[3]).strip() if r[3] else None
                 tipo = str(r[4]).strip() if r[4] else None
