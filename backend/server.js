@@ -1861,76 +1861,85 @@ app.post('/api/portal/update-image-asset', async (req, res) => {
   }
 });
 
-// POST send PDF to client via email
+// POST send PDF or text to client via email
 app.post('/api/portal/send-pdf-email', async (req, res) => {
   try {
     const nodemailer = require('nodemailer');
-    const { client_email, target_pdf_code, car_model, subject, message } = req.body;
+    const { client_email, target_pdf_code, car_model, subject, message, attach_pdf } = req.body;
 
     if (!client_email || !client_email.includes('@')) {
       return res.status(400).json({ error: 'Inserisci un indirizzo email valido per il cliente.' });
     }
 
     const cleanCode = String(target_pdf_code || '').trim().toLowerCase();
-    let matchedFile = findPdfForCode(target_pdf_code);
+    const shouldAttach = attach_pdf !== false && attach_pdf !== 'false' && attach_pdf !== 0;
+    let matchedFile = null;
     let attachmentConfig = null;
 
-    if (matchedFile) {
-      const localFilePath = path.join(PREVENTIVI_PDF_DIR, matchedFile);
-      if (fs.existsSync(localFilePath)) {
+    if (shouldAttach) {
+      matchedFile = findPdfForCode(target_pdf_code);
+      if (matchedFile) {
+        const localFilePath = path.join(PREVENTIVI_PDF_DIR, matchedFile);
+        if (fs.existsSync(localFilePath)) {
+          attachmentConfig = {
+            filename: matchedFile,
+            path: localFilePath
+          };
+        }
+      }
+
+      // If local file not found on disk (e.g. running on Vercel), fetch from cloud
+      if (!attachmentConfig) {
+        const cloudAsset = await getCloudAsset(cleanCode, 'pdf');
+        const cloudUrl = (cloudAsset && cloudAsset.cloud_url)
+          ? cloudAsset.cloud_url
+          : `${SUPABASE_URL}/storage/v1/object/public/preventivi-pdf/${encodeURIComponent(cleanCode)}.pdf`;
+        matchedFile = (cloudAsset && cloudAsset.filename) ? cloudAsset.filename : `${cleanCode}.pdf`;
         attachmentConfig = {
           filename: matchedFile,
-          path: localFilePath
+          path: cloudUrl
         };
       }
     }
 
-    // If local file not found on disk (e.g. running on Vercel), fetch from cloud
-    if (!attachmentConfig) {
-      let cloudUrl = await getCloudAsset(cleanCode, 'pdf');
-      if (!cloudUrl) {
-        cloudUrl = `${SUPABASE_URL}/storage/v1/object/public/preventivi-pdf/${encodeURIComponent(cleanCode)}.pdf`;
+    const smtpHost = process.env.SMTP_HOST || 'smtp.rossomandi.com';
+    const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
+    const smtpSecure = process.env.SMTP_SECURE === 'true' || false;
+    const smtpUser = process.env.SMTP_USER || 'preventivi@rossomandi.com';
+    const smtpPass = process.env.SMTP_PASS || 'Preventivi01!';
+    const smtpFrom = process.env.SMTP_FROM || '"Rossomandi Automotive" <preventivi@rossomandi.com>';
+
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+      tls: {
+        rejectUnauthorized: false
       }
-      matchedFile = matchedFile || `${cleanCode}.pdf`;
-      attachmentConfig = {
-        filename: matchedFile,
-        path: cloudUrl
-      };
-    }
+    });
 
-    let emailStatusMessage = '';
+    const mailOptions = {
+      from: smtpFrom,
+      to: client_email.trim(),
+      subject: subject || `Rossomandi Automotive - Documentazione Veicolo ${car_model || ''} (Rif. ${target_pdf_code || ''})`,
+      text: message || `Gentile Cliente,\n\nIn allegato Le inviamo la documentazione/preventivo relativo al veicolo ${car_model || ''} (Rif. ${target_pdf_code || ''}).\n\nCordiali saluti,\nRossomandi Automotive SRL\nTel: +39-3481714322`,
+      attachments: (shouldAttach && attachmentConfig) ? [attachmentConfig] : []
+    };
 
-    if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-        tls: {
-          rejectUnauthorized: false
-        }
-      });
-
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || `"Rossomandi Automotive" <${process.env.SMTP_USER}>`,
-        to: client_email.trim(),
-        subject: subject || `Rossomandi Automotive - Documentazione Veicolo ${car_model || ''} (Rif. ${target_pdf_code})`,
-        text: message || `Gentile Cliente,\n\nIn allegato Le inviamo la documentazione/preventivo relativo al veicolo ${car_model || ''} (Rif. ${target_pdf_code}).\n\nCordiali saluti,\nRossomandi Automotive SRL\nTel: +39-3481714322`,
-        attachments: [attachmentConfig]
-      });
-      emailStatusMessage = `Email inviata con successo a ${client_email} con allegato ${matchedFile}!`;
-    } else {
-      emailStatusMessage = `Email predisposta con successo per ${client_email} con allegato ${matchedFile}!`;
-    }
+    await transporter.sendMail(mailOptions);
+    const emailStatusMessage = shouldAttach && matchedFile
+      ? `Email inviata con successo a ${client_email} con allegato ${matchedFile}!`
+      : `Email inviata con successo a ${client_email}!`;
 
     res.json({
       success: true,
       message: emailStatusMessage,
       recipient: client_email,
-      attachment: matchedFile
+      attachment: shouldAttach ? matchedFile : null
     });
   } catch (err) {
     console.error('Error sending PDF email:', err.message);

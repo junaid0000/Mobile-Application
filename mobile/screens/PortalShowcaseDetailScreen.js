@@ -113,6 +113,20 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
     `Gentile Cliente,\n\nIn allegato trova il preventivo per la vettura ${brand} ${model}.\n\nCordiali saluti,\nRossomandi Automotive SRL`
   );
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [attachPdf, setAttachPdf] = useState(true);
+
+  const handleToggleAttachPdf = (val) => {
+    setAttachPdf(val);
+    if (!val) {
+      if (emailMessage.includes("In allegato trova il preventivo")) {
+        setEmailMessage(`Gentile Cliente,\n\nDi seguito i dettagli dell'offerta per la vettura ${brand} ${model}.\n\nCordiali saluti,\nRossomandi Automotive SRL`);
+      }
+    } else {
+      if (emailMessage.includes("Di seguito i dettagli dell'offerta")) {
+        setEmailMessage(`Gentile Cliente,\n\nIn allegato trova il preventivo per la vettura ${brand} ${model}.\n\nCordiali saluti,\nRossomandi Automotive SRL`);
+      }
+    }
+  };
 
   const handleOpenPdf = () => {
     if (!hasPdf && !targetPdfCode) {
@@ -166,6 +180,7 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
           car_model: model || "Veicolo",
           subject: emailSubject,
           message: emailMessage,
+          attach_pdf: attachPdf,
         },
         { headers }
       );
@@ -765,10 +780,52 @@ export default function PortalShowcaseDetailScreen({ navigation, route }) {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 18 }}>
-              {/* Attachment badge */}
-              <View style={styles.attachmentBadge}>
-                <Text style={{ color: "#38BDF8", fontWeight: "700", fontSize: 13 }}>
-                  📎 Allegato: {pdfFilename || `${targetPdfCode}.pdf`}
+              {/* Option to send with or without PDF */}
+              <View style={styles.attachOptionBox}>
+                <Text style={styles.emailInputLabel}>Modalità Invio:</Text>
+                <View style={styles.attachOptionRow}>
+                  <TouchableOpacity
+                    style={[styles.attachOptionBtn, attachPdf ? styles.attachOptionBtnActive : styles.attachOptionBtnInactive]}
+                    onPress={() => handleToggleAttachPdf(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.attachOptionIcon, attachPdf && { color: "#38BDF8" }]}>
+                      {attachPdf ? "🔘" : "⚪"}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.attachOptionTitle, attachPdf && { color: "#38BDF8", fontWeight: "800" }]}>
+                        Con Allegato PDF
+                      </Text>
+                      <Text style={styles.attachOptionSub} numberOfLines={1}>
+                        {pdfFilename || `${targetPdfCode}.pdf`}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.attachOptionBtn, !attachPdf ? styles.attachOptionBtnActive : styles.attachOptionBtnInactive]}
+                    onPress={() => handleToggleAttachPdf(false)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.attachOptionIcon, !attachPdf && { color: "#F59E0B" }]}>
+                      {!attachPdf ? "🔘" : "⚪"}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.attachOptionTitle, !attachPdf && { color: "#F59E0B", fontWeight: "800" }]}>
+                        Senza PDF
+                      </Text>
+                      <Text style={styles.attachOptionSub}>
+                        Solo testo email
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Status summary badge */}
+              <View style={[styles.attachmentBadge, !attachPdf && styles.attachmentBadgeNoPdf]}>
+                <Text style={{ color: attachPdf ? "#38BDF8" : "#F59E0B", fontWeight: "700", fontSize: 13 }}>
+                  {attachPdf ? `📎 Allegato: ${pdfFilename || `${targetPdfCode}.pdf`}` : "✉️ Invio Solo Testo (Nessun allegato PDF)"}
                 </Text>
                 <Text style={{ color: "#94A3B8", fontSize: 11, marginTop: 2 }}>
                   Veicolo: {brand} {model}
@@ -1777,6 +1834,44 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     cursor: "pointer",
   },
+  attachOptionBox: {
+    marginBottom: 14,
+  },
+  attachOptionRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  attachOptionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#0B1526",
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    gap: 8,
+  },
+  attachOptionBtnActive: {
+    borderColor: "#38BDF8",
+    backgroundColor: "rgba(56, 189, 248, 0.08)",
+  },
+  attachOptionBtnInactive: {
+    borderColor: "#1E2E4A",
+  },
+  attachOptionIcon: {
+    fontSize: 16,
+    color: "#64748B",
+  },
+  attachOptionTitle: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  attachOptionSub: {
+    color: "#64748B",
+    fontSize: 10,
+    marginTop: 1,
+  },
   attachmentBadge: {
     backgroundColor: "#0B1526",
     padding: 10,
@@ -1784,6 +1879,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#1E2E4A",
     marginBottom: 14,
+  },
+  attachmentBadgeNoPdf: {
+    borderColor: "rgba(245, 158, 11, 0.4)",
+    backgroundColor: "rgba(245, 158, 11, 0.08)",
   },
   emailInputLabel: {
     color: "#94A3B8",

@@ -42,6 +42,25 @@ export default function PortalCarDetailScreen({ navigation, route }) {
   const [emailSubject, setEmailSubject] = useState('');
   const [emailMessage, setEmailMessage] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [attachPdf, setAttachPdf] = useState(true);
+
+  const handleToggleAttachPdf = (val) => {
+    setAttachPdf(val);
+    const carName = car?.modello || 'Veicolo';
+    if (!val) {
+      if (emailMessage.includes('In allegato Le inviamo')) {
+        setEmailMessage(
+          `Gentile Cliente,\n\nDi seguito i dettagli dell'offerta per il veicolo ${carName} (Riferimento ${targetPdfCode}).\n\nRestiamo a Sua completa disposizione per qualsiasi chiarimento o per concordare una prova su strada.\n\nCordiali saluti,\nRossomandi Automotive SRL\nTel: +39-3481714322`
+        );
+      }
+    } else {
+      if (emailMessage.includes("Di seguito i dettagli dell'offerta")) {
+        setEmailMessage(
+          `Gentile Cliente,\n\nIn allegato Le inviamo la documentazione e preventivo per il veicolo ${carName} (Riferimento ${targetPdfCode}).\n\nRestiamo a Sua completa disposizione per qualsiasi chiarimento o per concordare una prova su strada.\n\nCordiali saluti,\nRossomandi Automotive SRL\nTel: +39-3481714322`
+        );
+      }
+    }
+  };
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -146,6 +165,7 @@ export default function PortalCarDetailScreen({ navigation, route }) {
         car_model: car.modello || 'Veicolo',
         subject: emailSubject,
         message: emailMessage,
+        attach_pdf: attachPdf,
       }, { headers });
 
       const successMsg = res.data?.message || `Email inviata con successo a ${clientEmail}!`;
@@ -522,12 +542,54 @@ export default function PortalCarDetailScreen({ navigation, route }) {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 18 }}>
-              {/* Attachment badge */}
-              <View style={styles.attachmentBadge}>
-                <Text style={{ color: '#38BDF8', fontWeight: '700', fontSize: 13 }}>
-                  📎 Allegato: {pdfFilename}
+              {/* Option to send with or without PDF */}
+              <View style={styles.attachOptionBox}>
+                <Text style={styles.inputLabel}>Modalità Invio:</Text>
+                <View style={styles.attachOptionRow}>
+                  <TouchableOpacity
+                    style={[styles.attachOptionBtn, attachPdf ? styles.attachOptionBtnActive : styles.attachOptionBtnInactive]}
+                    onPress={() => handleToggleAttachPdf(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.attachOptionIcon, attachPdf && { color: '#38BDF8' }]}>
+                      {attachPdf ? '🔘' : '⚪'}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.attachOptionTitle, attachPdf && { color: '#38BDF8', fontWeight: '800' }]}>
+                        Con Allegato PDF
+                      </Text>
+                      <Text style={styles.attachOptionSub} numberOfLines={1}>
+                        {pdfFilename || `${targetPdfCode}.pdf`}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.attachOptionBtn, !attachPdf ? styles.attachOptionBtnActive : styles.attachOptionBtnInactive]}
+                    onPress={() => handleToggleAttachPdf(false)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.attachOptionIcon, !attachPdf && { color: '#F59E0B' }]}>
+                      {!attachPdf ? '🔘' : '⚪'}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.attachOptionTitle, !attachPdf && { color: '#F59E0B', fontWeight: '800' }]}>
+                        Senza PDF
+                      </Text>
+                      <Text style={styles.attachOptionSub}>
+                        Solo testo email
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Status summary badge */}
+              <View style={[styles.attachmentBadge, !attachPdf && styles.attachmentBadgeNoPdf]}>
+                <Text style={{ color: attachPdf ? '#38BDF8' : '#F59E0B', fontWeight: '700', fontSize: 13 }}>
+                  {attachPdf ? `📎 Allegato PDF: ${pdfFilename || `${targetPdfCode}.pdf`}` : '✉️ Invio Solo Testo (Nessun allegato PDF)'}
                 </Text>
-                <Text style={{ color: '#94A3B8', fontSize: 11 }}>
+                <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
                   Veicolo: {car.modello}
                 </Text>
               </View>
@@ -1043,6 +1105,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  attachOptionBox: {
+    marginBottom: 14,
+  },
+  attachOptionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  attachOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    gap: 8,
+  },
+  attachOptionBtnActive: {
+    borderColor: '#38BDF8',
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+  },
+  attachOptionBtnInactive: {
+    borderColor: '#334155',
+  },
+  attachOptionIcon: {
+    fontSize: 16,
+    color: '#64748B',
+  },
+  attachOptionTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  attachOptionSub: {
+    color: '#64748B',
+    fontSize: 10,
+    marginTop: 1,
+  },
   attachmentBadge: {
     backgroundColor: 'rgba(56, 189, 248, 0.1)',
     borderRadius: 10,
@@ -1050,6 +1150,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#38BDF8',
     marginBottom: 16,
+  },
+  attachmentBadgeNoPdf: {
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
   },
   inputLabel: {
     color: '#CBD5E1',
