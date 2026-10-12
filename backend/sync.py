@@ -928,10 +928,54 @@ def upsert_stock_usato_to_local_postgresql(items):
             pg_conn.close()
 
 def fetch_tab_preventivi_esterni(db_path):
-    """Fetches tabPreventiviEsterni query with Indice, Marca, Modello, Rimborso, RataFZero, and Nota1."""
+    """Fetches exact tabPreventiviEsterni query with Indice, Marca, Modello, Rimborso, RataFZero, and Nota1."""
     if not db_path or not os.path.exists(db_path):
         return []
 
+    # 1. Native Access COM evaluation (exact calculation of Rimborso & RataFZero directly from tabPreventiviEsterni query)
+    try:
+        import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
+        app = win32com.client.Dispatch('Access.Application')
+        app.OpenCurrentDatabase(db_path)
+        db = app.CurrentDb()
+        rs = db.OpenRecordset('tabPreventiviEsterni')
+        data = rs.GetRows(2000)
+        rs.Close()
+        app.Quit()
+
+        num_rows = len(data[0])
+        cars = []
+        for i in range(num_rows):
+            indice = str(data[0][i]).strip() if data[0][i] is not None else None
+            if not indice:
+                continue
+            marca = str(data[1][i]).strip() if data[1][i] is not None else None
+            modello = str(data[2][i]).strip() if data[2][i] is not None else None
+            colore_vn = str(data[3][i]).strip() if data[3][i] is not None else None
+            rimborso = float(data[4][i]) if data[4][i] is not None else None
+            tipo = str(data[5][i]).strip() if data[5][i] is not None else None
+            rata_f_zero = float(data[6][i]) if data[6][i] is not None else None
+            nota1 = str(data[7][i]).strip() if data[7][i] is not None else None
+
+            clean_marca = marca.upper().rstrip('1') if marca else None
+            cars.append({
+                "indice": indice,
+                "marca": clean_marca,
+                "modello": modello,
+                "colore_vn": colore_vn,
+                "tipo_appunt_vendita": tipo,
+                "rimborso": rimborso,
+                "rata_f_zero": rata_f_zero,
+                "nota1": nota1
+            })
+        if cars:
+            return cars
+    except Exception as com_err:
+        pass
+
+    # 2. Fallback to ODBC if COM is busy or unavailable
     temp_path = os.path.abspath("temp_preventivi_sync.accdb")
     conn_path = db_path
     if copy_locked_file(db_path, temp_path):
