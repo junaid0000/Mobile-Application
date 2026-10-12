@@ -1016,7 +1016,7 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 _tracked_pdf_stats = {}
 
 def sync_preventivi_pdfs_to_supabase():
-    """Scans C:\Users\Public\Preventivi_PDF and uploads new or updated PDFs to Supabase cloud storage."""
+    r"""Scans C:\Users\Public\Preventivi_PDF and uploads new or updated PDFs to Supabase cloud storage."""
     pdf_dir = r"C:\Users\Public\Preventivi_PDF"
     if not os.path.exists(pdf_dir):
         return
@@ -1087,7 +1087,7 @@ def sync_preventivi_pdfs_to_supabase():
 _tracked_img_stats = {}
 
 def sync_car_images_to_supabase():
-    """Scans C:\Users\Public\Esterni photo and uploads new or updated car images to Supabase cloud storage."""
+    r"""Scans C:\Users\Public\Esterni photo and uploads new or updated car images to Supabase cloud storage."""
     img_dirs = [r"C:\Users\Public\Esterni photo", r"C:\Users\Public\Cars_Images"]
     valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
     for img_dir in img_dirs:
