@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Switch,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,12 +24,97 @@ function generateRandomPassword() {
   return pass + '!';
 }
 
+// Custom Cross-Platform Dropdown matching exact screenshot style
+function CustomDropdown({ label, value, options, onSelect, highlightRed }) {
+  const [open, setOpen] = useState(false);
+  const selectedObj = options.find((o) => o.value === value) || options[0];
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{ marginBottom: 12 }}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <View
+          style={[
+            styles.webSelectWrapper,
+            highlightRed && styles.webSelectWrapperRed,
+          ]}
+        >
+          <select
+            value={value}
+            onChange={(e) => onSelect(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              fontSize: '13px',
+              color: '#111827',
+              backgroundColor: 'transparent',
+              border: 'none',
+              outline: 'none',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {options.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ marginBottom: 12, zIndex: open ? 100 : 1 }}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TouchableOpacity
+        style={[
+          styles.dropdownTrigger,
+          (open || highlightRed) && styles.dropdownTriggerRed,
+        ]}
+        onPress={() => setOpen(!open)}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.dropdownTriggerText}>{selectedObj?.label}</Text>
+        <Text style={styles.dropdownChevron}>{open ? '▴' : '▾'}</Text>
+      </TouchableOpacity>
+      {open && (
+        <View style={styles.dropdownMenu}>
+          {options.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[
+                styles.dropdownItem,
+                opt.value === value && styles.dropdownItemActive,
+              ]}
+              onPress={() => {
+                onSelect(opt.value);
+                setOpen(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  opt.value === value && styles.dropdownItemTextActive,
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function AdminClubScreen({ navigation, route }) {
   const { user, token } = route.params || {};
 
   // Form State matching exact screenshot ("Nuovo utente e codice associato")
   const [userType, setUserType] = useState('segnalatore'); // 'segnalatore' | 'azienda' | 'cliente'
-  const [subType, setSubType] = useState('privato');       // 'privato' | 'azienda'
+  const [subType, setSubType] = useState('privato');       // 'privato' | 'azienda' | 'officina' | 'autoscuola' | 'carrozzeria'
   const [personName, setPersonName] = useState('');
   const [personEmail, setPersonEmail] = useState('');
   const [code, setCode] = useState('');
@@ -38,7 +122,7 @@ export default function AdminClubScreen({ navigation, route }) {
   const [validUntil, setValidUntil] = useState('');
   const [isActive, setIsActive] = useState(true);
 
-  // Company / Officina fields (when subType === 'azienda')
+  // Company / Officina fields (when subType !== 'privato' or userType === 'azienda')
   const [tipoAzienda, setTipoAzienda] = useState('Officina');
   const [ragioneSociale, setRagioneSociale] = useState('');
   const [partitaIva, setPartitaIva] = useState('');
@@ -49,11 +133,12 @@ export default function AdminClubScreen({ navigation, route }) {
   const [telefono, setTelefono] = useState('');
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
-  const [privacyConfirmed, setPrivacyConfirmed] = useState(true);
 
   const [saving, setSaving] = useState(false);
   const [clubUsers, setClubUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+
+  const isCompanyMode = userType === 'azienda' || (userType === 'segnalatore' && subType !== 'privato');
 
   const fetchClubUsers = useCallback(async () => {
     try {
@@ -100,16 +185,16 @@ export default function AdminClubScreen({ navigation, route }) {
         password: password.trim(),
         valid_until: validUntil.trim() || null,
         is_active: isActive,
-        ragione_sociale: subType === 'azienda' ? ragioneSociale.trim() : null,
-        partita_iva: subType === 'azienda' ? partitaIva.trim() : null,
-        tipo_azienda: subType === 'azienda' ? tipoAzienda.trim() : null,
-        indirizzo: subType === 'azienda' ? indirizzo.trim() : null,
-        cap: subType === 'azienda' ? cap.trim() : null,
-        comune: subType === 'azienda' ? comune.trim() : null,
-        provincia: subType === 'azienda' ? provincia.trim() : null,
-        telefono: subType === 'azienda' ? telefono.trim() : null,
-        lat: subType === 'azienda' && lat ? lat : null,
-        lng: subType === 'azienda' && lng ? lng : null,
+        ragione_sociale: isCompanyMode ? ragioneSociale.trim() : null,
+        partita_iva: isCompanyMode ? partitaIva.trim() : null,
+        tipo_azienda: isCompanyMode ? (subType !== 'privato' ? subType : tipoAzienda.trim()) : null,
+        indirizzo: isCompanyMode ? indirizzo.trim() : null,
+        cap: isCompanyMode ? cap.trim() : null,
+        comune: isCompanyMode ? comune.trim() : null,
+        provincia: isCompanyMode ? provincia.trim() : null,
+        telefono: isCompanyMode ? telefono.trim() : null,
+        lat: isCompanyMode && lat ? lat : null,
+        lng: isCompanyMode && lng ? lng : null,
       };
 
       const res = await axios.post(`${BASE_URL}/api/club/admin/create-user`, payload, {
@@ -121,7 +206,6 @@ export default function AdminClubScreen({ navigation, route }) {
         res.data?.message || `Utente ${personName} salvato con codice ${code}!`
       );
 
-      // Reset form for next entry
       setPersonName('');
       setPersonEmail('');
       setCode('');
@@ -177,7 +261,11 @@ export default function AdminClubScreen({ navigation, route }) {
                 style={styles.previewRoleBtn}
                 onPress={() =>
                   navigation.navigate('SegnalatoreDashboard', {
-                    user: { ...user, name: personName || user?.name || 'Alex D\'Alise', venditore_code: code || '17754654' },
+                    user: {
+                      ...user,
+                      name: personName || user?.name || "Alex D'Alise",
+                      venditore_code: code || '17754654',
+                    },
                     token,
                     isAdminPreview: true,
                   })
@@ -186,12 +274,13 @@ export default function AdminClubScreen({ navigation, route }) {
                 <Text style={styles.previewRoleBtnText}>👁️ Visualizza come Segnalatore</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.backBtn}
-                onPress={() => navigation.goBack()}
-              >
-                <Text style={styles.backBtnText}>← Torna all'Admin</Text>
+              <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+                <Text style={styles.backBtnText}>← Admin</Text>
               </TouchableOpacity>
+
+              <View style={styles.userIconCircle}>
+                <Text style={{ fontSize: 14 }}>♟</Text>
+              </View>
             </View>
           </View>
 
@@ -202,64 +291,42 @@ export default function AdminClubScreen({ navigation, route }) {
               Scegli il tipo di utente. Per tutti i tipi di utente il codice viene inserito manualmente; per i segnalatori la password può essere generata.
             </Text>
 
-            {/* Tipo utente */}
-            <Text style={styles.fieldLabel}>Tipo utente</Text>
-            <View style={styles.selectorRow}>
-              <TouchableOpacity
-                style={[styles.selectOption, userType === 'segnalatore' && styles.selectOptionActive]}
-                onPress={() => setUserType('segnalatore')}
-              >
-                <Text style={[styles.selectOptionText, userType === 'segnalatore' && styles.selectOptionTextActive]}>
-                  Segnalatore
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.selectOption, userType === 'cliente' && styles.selectOptionActive]}
-                onPress={() => setUserType('cliente')}
-              >
-                <Text style={[styles.selectOptionText, userType === 'cliente' && styles.selectOptionTextActive]}>
-                  Cliente
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* DROPDOWN 1: Tipo utente */}
+            <CustomDropdown
+              label="Tipo utente"
+              value={userType}
+              onSelect={(val) => setUserType(val)}
+              options={[
+                { label: 'Segnalatore', value: 'segnalatore' },
+                { label: 'Azienda collaboratrice / Officina', value: 'azienda' },
+                { label: 'Cliente con codice sconto', value: 'cliente' },
+              ]}
+            />
 
-            {/* Segnalatore: Privato vs Azienda */}
-            <Text style={styles.fieldLabel}>Segnalatore</Text>
-            <View style={styles.selectorRow}>
-              <TouchableOpacity
-                style={[styles.selectOption, subType === 'privato' && styles.selectOptionActiveRed]}
-                onPress={() => setSubType('privato')}
-              >
-                <Text style={[styles.selectOptionText, subType === 'privato' && styles.selectOptionTextActive]}>
-                  Privato
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.selectOption, subType === 'azienda' && styles.selectOptionActiveRed]}
-                onPress={() => setSubType('azienda')}
-              >
-                <Text style={[styles.selectOptionText, subType === 'azienda' && styles.selectOptionTextActive]}>
-                  Azienda / Officina
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* DROPDOWN 2: Segnalatore (Privato / Azienda / Officina / Autoscuola / Carrozzeria) */}
+            {userType === 'segnalatore' && (
+              <CustomDropdown
+                label="Segnalatore"
+                value={subType}
+                highlightRed={true}
+                onSelect={(val) => setSubType(val)}
+                options={[
+                  { label: 'Privato', value: 'privato' },
+                  { label: 'Azienda / Partner', value: 'azienda' },
+                  { label: 'Officina / Meccanico', value: 'officina' },
+                  { label: 'Carrozzeria', value: 'carrozzeria' },
+                  { label: 'Autoscuola / Agenzia Pratiche', value: 'autoscuola' },
+                ]}
+              />
+            )}
 
-            {/* Dati Aziendali (Shown when Azienda is selected, matching colleague's code) */}
-            {subType === 'azienda' && (
+            {/* Dati Aziendali (Shown when Azienda/Officina is selected) */}
+            {isCompanyMode && (
               <View style={styles.companyBox}>
                 <Text style={styles.companyBoxTitle}>Dati aziendali</Text>
                 <Text style={styles.companyBoxSub}>
                   Un solo codice aziendale per tutti i clienti. L'email e la password di accesso sono quelle del referente.
                 </Text>
-
-                <Text style={styles.fieldLabel}>Tipo di azienda</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Es. Officina, Carrozzeria, Autoscuola"
-                  placeholderTextColor="#9CA3AF"
-                  value={tipoAzienda}
-                  onChangeText={setTipoAzienda}
-                />
 
                 <Text style={styles.fieldLabel}>Ragione sociale</Text>
                 <TextInput
@@ -391,30 +458,55 @@ export default function AdminClubScreen({ navigation, route }) {
             />
 
             {/* Password iniziale del segnalatore + Genera password */}
-            <Text style={styles.fieldLabel}>Password iniziale del segnalatore</Text>
-            <View style={styles.passwordRow}>
-              <TextInput
-                style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 10 }]}
-                value={password}
-                onChangeText={setPassword}
-              />
-              <TouchableOpacity
-                style={styles.generatePassBtn}
-                onPress={() => setPassword(generateRandomPassword())}
-              >
-                <Text style={styles.generatePassBtnText}>Genera password</Text>
-              </TouchableOpacity>
-            </View>
+            {userType !== 'cliente' && (
+              <>
+                <Text style={styles.fieldLabel}>Password iniziale del segnalatore</Text>
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 10 }]}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.generatePassBtn}
+                    onPress={() => setPassword(generateRandomPassword())}
+                  >
+                    <Text style={styles.generatePassBtnText}>Genera password</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
 
             {/* Valido fino al (facoltativo) */}
             <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Valido fino al (facoltativo)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="gg/mm/aaaa"
-              placeholderTextColor="#9CA3AF"
-              value={validUntil}
-              onChangeText={setValidUntil}
-            />
+            <View style={styles.dateInputWrapper}>
+              {Platform.OS === 'web' ? (
+                <input
+                  type="date"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontSize: '13px',
+                    color: '#111827',
+                    backgroundColor: '#FFFFFF',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '8px',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              ) : (
+                <TextInput
+                  style={[styles.input, { marginBottom: 0 }]}
+                  placeholder="gg/mm/aaaa"
+                  placeholderTextColor="#9CA3AF"
+                  value={validUntil}
+                  onChangeText={setValidUntil}
+                />
+              )}
+            </View>
 
             {/* Codice attivo checkbox */}
             <TouchableOpacity
@@ -465,7 +557,7 @@ export default function AdminClubScreen({ navigation, route }) {
                       <View style={styles.codeBadge}>
                         <Text style={styles.codeBadgeText}>Codice: {u.code}</Text>
                       </View>
-                      <View style={[styles.typeBadge, u.sub_type === 'azienda' && { backgroundColor: '#DBEAFE' }]}>
+                      <View style={[styles.typeBadge, u.sub_type !== 'privato' && { backgroundColor: '#DBEAFE' }]}>
                         <Text style={styles.typeBadgeText}>{u.sub_type || u.user_type}</Text>
                       </View>
                     </View>
@@ -546,6 +638,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  userIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   previewRoleBtn: {
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
@@ -593,37 +695,65 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     marginBottom: 6,
-    marginTop: 6,
+    marginTop: 4,
   },
-  selectorRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-  },
-  selectOption: {
-    flex: 1,
+  webSelectWrapper: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#E5E7EB',
     borderRadius: 8,
-    paddingVertical: 10,
+    overflow: 'hidden',
+  },
+  webSelectWrapperRed: {
+    borderColor: '#EF4444',
+    borderWidth: 1.5,
+  },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
     paddingHorizontal: 12,
+    paddingVertical: 11,
   },
-  selectOptionActive: {
-    borderColor: '#111827',
+  dropdownTriggerRed: {
+    borderColor: '#EF4444',
     borderWidth: 1.5,
   },
-  selectOptionActiveRed: {
-    borderColor: '#DC2626',
-    borderWidth: 1.5,
+  dropdownTriggerText: {
+    fontSize: 13,
+    color: '#111827',
   },
-  selectOptionText: {
+  dropdownChevron: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  dropdownMenu: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#FEF2F2',
+  },
+  dropdownItemText: {
     fontSize: 13,
     color: '#374151',
-    fontWeight: '600',
   },
-  selectOptionTextActive: {
-    color: '#111827',
+  dropdownItemTextActive: {
+    color: '#DC2626',
     fontWeight: '700',
   },
   companyBox: {
@@ -657,6 +787,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 13,
     color: '#111827',
+    marginBottom: 10,
+  },
+  dateInputWrapper: {
     marginBottom: 10,
   },
   passwordRow: {
