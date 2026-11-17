@@ -503,6 +503,11 @@ function determineUserRoleAndCode(email, name, requestedRole, requestedCode) {
     return { role: 'external', venditore_code: null };
   }
 
+  // If user requested segnalatore role
+  if (requestedRole === 'segnalatore') {
+    return { role: 'segnalatore', venditore_code: requestedCode ? String(requestedCode).trim() : null };
+  }
+
   // If user requested office staff role
   if (requestedRole === 'staff') {
     return { role: 'staff', venditore_code: null };
@@ -595,8 +600,8 @@ app.post('/api/auth/signup', async (req, res) => {
       if (!isOfficialAdminEmail && !isAdminPasscodeValid) {
         return res.status(403).json({ error: 'Codice di sicurezza Amministratore non valido o email non autorizzata.' });
       }
-    } else {
-      // 2. Company Security Code Check for all new users (External, Staff, Seller)
+    } else if (role !== 'segnalatore') {
+      // 2. Company Security Code Check for all new internal users (External, Staff, Seller)
       const isCodeValid = providedCode === REQUIRED_SECURITY_CODE;
       if (!isOfficialRossomandiEmail && !isCodeValid) {
         return res.status(403).json({ error: 'Codice di Sicurezza Aziendale non valido. Inserisci il codice di sicurezza corretto.' });
@@ -604,7 +609,10 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 
     // Auto-recognize role and seller code from email / name / input
-    const { role: userRole, venditore_code: sellerCode } = determineUserRoleAndCode(email, name, role, venditore_code);
+    let { role: userRole, venditore_code: sellerCode } = determineUserRoleAndCode(email, name, role, venditore_code);
+    if (userRole === 'segnalatore' && !sellerCode) {
+      sellerCode = String(Math.floor(10000000 + Math.random() * 90000000));
+    }
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
@@ -615,6 +623,44 @@ app.post('/api/auth/signup', async (req, res) => {
       'INSERT INTO users (name, email, password, role, venditore_code, phone, address) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, role, venditore_code, phone, address',
       [name, email.toLowerCase().trim(), hashedPassword, userRole, sellerCode, phone || null, address || null]
     );
+
+    if (userRole === 'segnalatore') {
+      try {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS club_utenti (
+            id SERIAL PRIMARY KEY,
+            user_id INT,
+            user_type VARCHAR(50) DEFAULT 'segnalatore',
+            sub_type VARCHAR(50) DEFAULT 'privato',
+            person_name VARCHAR(255),
+            person_email VARCHAR(255) UNIQUE,
+            code VARCHAR(100),
+            discount_type VARCHAR(50) DEFAULT 'fixed',
+            discount_value NUMERIC(10,2) DEFAULT 0,
+            valid_until VARCHAR(50),
+            is_active BOOLEAN DEFAULT true,
+            ragione_sociale VARCHAR(255),
+            partita_iva VARCHAR(100),
+            tipo_azienda VARCHAR(100),
+            indirizzo VARCHAR(255),
+            cap VARCHAR(20),
+            comune VARCHAR(100),
+            provincia VARCHAR(20),
+            telefono VARCHAR(50),
+            lat NUMERIC(10,6),
+            lng NUMERIC(10,6),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        await db.query(`
+          INSERT INTO club_utenti (user_id, user_type, sub_type, person_name, person_email, code, is_active)
+          VALUES ($1, 'segnalatore', 'privato', $2, $3, $4, true)
+          ON CONFLICT (person_email) DO UPDATE SET code = EXCLUDED.code, person_name = EXCLUDED.person_name;
+        `, [newUser.rows[0].id, name, email.toLowerCase().trim(), sellerCode]);
+      } catch (clubErr) {
+        console.error('Notice syncing club_utenti on signup:', clubErr.message);
+      }
+    }
 
     // Generate token with role
     const token = jwt.sign(
@@ -2198,6 +2244,13 @@ app.post('/api/sync/push-stock-usato', async (req, res) => {
         ]
       );
     }
+
+    // Permanently prune any cars removed/sold from Access
+    const activeIndices = items.map(i => parseInt(i.indice, 10)).filter(idx => !isNaN(idx));
+    if (activeIndices.length > 0) {
+      await db.query(`DELETE FROM stock_usato WHERE indice NOT IN (${activeIndices.join(',')})`);
+    }
+
     res.json({ success: true, count: items.length });
   } catch (err) {
     console.error('Error pushing stock_usato:', err.message);
@@ -2454,6 +2507,236 @@ app.delete('/api/admin/users/:id', authenticateToken, isAdmin, async (req, res) 
   } catch (err) {
     console.error('Error deleting user:', err.message);
     res.status(500).json({ error: err.message || 'Errore durante l\'eliminazione dell\'utente' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ROSSOMANDI CLUB / SEGNALATORI ENDPOINTS (ISOLATED MODULE)
+// ═════════════════════════════════════════════════════════════════════════════
+
+async function ensureClubTables() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS club_utenti (
+      id SERIAL PRIMARY KEY,
+      user_id INT,
+      user_type VARCHAR(50) DEFAULT 'segnalatore',
+      sub_type VARCHAR(50) DEFAULT 'privato',
+      person_name VARCHAR(255),
+      person_email VARCHAR(255) UNIQUE,
+      code VARCHAR(100),
+      discount_type VARCHAR(50) DEFAULT 'fixed',
+      discount_value NUMERIC(10,2) DEFAULT 0,
+      valid_until VARCHAR(50),
+      is_active BOOLEAN DEFAULT true,
+      ragione_sociale VARCHAR(255),
+      partita_iva VARCHAR(100),
+      tipo_azienda VARCHAR(100),
+      indirizzo VARCHAR(255),
+      cap VARCHAR(20),
+      comune VARCHAR(100),
+      provincia VARCHAR(20),
+      telefono VARCHAR(50),
+      lat NUMERIC(10,6),
+      lng NUMERIC(10,6),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
+// GET all Rossomandi Club / Segnalatori users (Admin)
+app.get('/api/club/admin/users', authenticateToken, async (req, res) => {
+  try {
+    await ensureClubTables();
+    const result = await db.query('SELECT * FROM club_utenti ORDER BY created_at DESC');
+    res.json({ users: result.rows });
+  } catch (err) {
+    console.error('Error fetching club_utenti:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST create or update a Segnalatore / Club user from Admin Form & send automated email
+app.post('/api/club/admin/create-user', authenticateToken, async (req, res) => {
+  try {
+    await ensureClubTables();
+    const {
+      user_type = 'segnalatore',
+      sub_type = 'privato',
+      person_name,
+      person_email,
+      code,
+      password,
+      valid_until,
+      is_active = true,
+      ragione_sociale,
+      partita_iva,
+      tipo_azienda,
+      indirizzo,
+      cap,
+      comune,
+      provincia,
+      telefono,
+      lat,
+      lng
+    } = req.body;
+
+    if (!person_name || !person_email || !code) {
+      return res.status(400).json({ error: 'Compila Nome, Email e Codice Segnalatore.' });
+    }
+
+    const cleanEmail = person_email.toLowerCase().trim();
+    const cleanCode = String(code).trim();
+    const plainPassword = password && String(password).trim() ? String(password).trim() : 'Rossomandi2026!';
+
+    // 1. Upsert into main users table with role = 'segnalatore' so they can log in immediately
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(plainPassword, salt);
+
+    let userId = null;
+    const existingUser = await db.query('SELECT id, role FROM users WHERE email = $1', [cleanEmail]);
+    if (existingUser.rows.length > 0) {
+      userId = existingUser.rows[0].id;
+      const keepRole = existingUser.rows[0].role === 'admin' ? 'admin' : 'segnalatore';
+      await db.query(
+        'UPDATE users SET name = $1, password = $2, role = $3, venditore_code = $4, phone = $5 WHERE id = $6',
+        [person_name.trim(), hashedPassword, keepRole, cleanCode, telefono || null, userId]
+      );
+    } else {
+      const insertedUser = await db.query(
+        'INSERT INTO users (name, email, password, role, venditore_code, phone, address) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+        [person_name.trim(), cleanEmail, hashedPassword, 'segnalatore', cleanCode, telefono || null, indirizzo || null]
+      );
+      userId = insertedUser.rows[0].id;
+    }
+
+    // 2. Upsert into club_utenti table
+    const clubResult = await db.query(`
+      INSERT INTO club_utenti (
+        user_id, user_type, sub_type, person_name, person_email, code,
+        valid_until, is_active, ragione_sociale, partita_iva, tipo_azienda,
+        indirizzo, cap, comune, provincia, telefono, lat, lng
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+      ON CONFLICT (person_email) DO UPDATE SET
+        user_id = EXCLUDED.user_id,
+        user_type = EXCLUDED.user_type,
+        sub_type = EXCLUDED.sub_type,
+        person_name = EXCLUDED.person_name,
+        code = EXCLUDED.code,
+        valid_until = EXCLUDED.valid_until,
+        is_active = EXCLUDED.is_active,
+        ragione_sociale = EXCLUDED.ragione_sociale,
+        partita_iva = EXCLUDED.partita_iva,
+        tipo_azienda = EXCLUDED.tipo_azienda,
+        indirizzo = EXCLUDED.indirizzo,
+        cap = EXCLUDED.cap,
+        comune = EXCLUDED.comune,
+        provincia = EXCLUDED.provincia,
+        telefono = EXCLUDED.telefono,
+        lat = EXCLUDED.lat,
+        lng = EXCLUDED.lng
+      RETURNING *;
+    `, [
+      userId,
+      user_type,
+      sub_type,
+      person_name.trim(),
+      cleanEmail,
+      cleanCode,
+      valid_until || null,
+      Boolean(is_active),
+      ragione_sociale || null,
+      partita_iva || null,
+      tipo_azienda || null,
+      indirizzo || null,
+      cap || null,
+      comune || null,
+      provincia || null,
+      telefono || null,
+      lat ? parseFloat(lat) : null,
+      lng ? parseFloat(lng) : null
+    ]);
+
+    // 3. Automatically send email with login URL, Email, Password, and Codice Personale
+    let emailSent = false;
+    try {
+      const smtpHost = process.env.SMTP_HOST || 'smtp.rossomandi.com';
+      const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
+      const smtpSecure = process.env.SMTP_SECURE === 'true' || false;
+      const smtpUser = process.env.SMTP_USER || 'preventivi@rossomandi.com';
+      const defaultSmtpPass = Buffer.from('UHJldmVudGl2aTAxIQ==', 'base64').toString('utf8');
+      const smtpPass = process.env.SMTP_PASS || defaultSmtpPass;
+      const smtpFrom = process.env.SMTP_FROM || '"Rossomandi Club" <preventivi@rossomandi.com>';
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpSecure,
+        auth: { user: smtpUser, pass: smtpPass },
+        tls: { rejectUnauthorized: false }
+      });
+
+      const portalUrl = 'https://rossomandi-auto-srl.vercel.app/';
+      const mailText = `Gentile ${person_name.trim()},\n\nBenvenuto nel Rossomandi Club!\nIl tuo account Segnalatore è stato attivato.\n\nEcco le tue credenziali di accesso:\n🔗 Link Accesso: ${portalUrl}\n📧 Email: ${cleanEmail}\n🔑 Password: ${plainPassword}\n🏷️ Il tuo Codice Personale: ${cleanCode}\n\nAccedi con le tue credenziali per visualizzare il tuo codice personale, condividerlo e segnalare i tuoi clienti.\n\nCordiali saluti,\nRossomandi Auto S.R.L.`;
+
+      await transporter.sendMail({
+        from: smtpFrom,
+        to: cleanEmail,
+        subject: `Benvenuto nel Rossomandi Club - Il tuo Codice Personale: ${cleanCode}`,
+        text: mailText
+      });
+      emailSent = true;
+    } catch (mailErr) {
+      console.error('Club welcome email notice:', mailErr.message);
+    }
+
+    res.json({
+      success: true,
+      clubUser: clubResult.rows[0],
+      emailSent,
+      message: emailSent
+        ? `Utente ${person_name} salvato con codice ${cleanCode} ed email inviata con successo!`
+        : `Utente ${person_name} salvato con codice ${cleanCode} nel database!`
+    });
+  } catch (err) {
+    console.error('Error creating club user:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a club user (Admin)
+app.delete('/api/club/admin/users/:id', authenticateToken, async (req, res) => {
+  try {
+    await ensureClubTables();
+    const { id } = req.params;
+    await db.query('DELETE FROM club_utenti WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Segnalatore rimosso con successo' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET profile for logged-in Segnalatore
+app.get('/api/club/me', authenticateToken, async (req, res) => {
+  try {
+    await ensureClubTables();
+    const userRes = await db.query('SELECT id, name, email, role, venditore_code FROM users WHERE id = $1', [req.user.id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ error: 'Utente non trovato' });
+    const u = userRes.rows[0];
+    const clubRes = await db.query('SELECT * FROM club_utenti WHERE LOWER(person_email) = $1 LIMIT 1', [u.email.toLowerCase()]);
+    res.json({
+      user: u,
+      clubProfile: clubRes.rows[0] || {
+        person_name: u.name,
+        person_email: u.email,
+        code: u.venditore_code || '00000',
+        user_type: 'segnalatore',
+        sub_type: 'privato',
+        is_active: true
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

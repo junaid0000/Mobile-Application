@@ -331,6 +331,18 @@ export default function AdminDashboard({ navigation, route }) {
               </View>
             </TouchableOpacity>
 
+            {/* Button: Segnalatori / Rossomandi Club */}
+            <TouchableOpacity
+              style={[styles.clay3DButton, { backgroundColor: '#1E1B2E', borderColor: '#FF4757', borderWidth: 1.5 }]}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('AdminClub', { user, token })}
+            >
+              <View style={styles.clayButtonInner}>
+                <Text style={styles.clayButtonEmoji}>📣</Text>
+                <Text style={[styles.clayButtonText, { color: '#FF4757' }]}>Segnalatori Club</Text>
+              </View>
+            </TouchableOpacity>
+
             {/* Button 3: Chat Ufficio */}
             <TouchableOpacity
               style={[styles.clay3DButton, styles.clay3DButtonDarker]}
