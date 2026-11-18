@@ -52,7 +52,7 @@ export default function SegnalatoreDashboard({ navigation, route }) {
 
   // Form state for "LA TUA RICHIESTA - Richiedi preventivo auto"
   const [codiceSconto, setCodiceSconto] = useState('');
-  const [scontoStatus, setScontoStatus] = useState(null); // { valid, message }
+  const [scontoStatus, setScontoStatus] = useState(null);
   const [reqNome, setReqNome] = useState('');
   const [reqTelefono, setReqTelefono] = useState('');
   const [reqEmail, setReqEmail] = useState('');
@@ -87,7 +87,7 @@ export default function SegnalatoreDashboard({ navigation, route }) {
   }, [fetchMyClub]);
 
   const displayName = clubProfile?.person_name || user?.name || "Alex D'Alise";
-  const personalCode = clubProfile?.code || user?.venditore_code || '17754654';
+  const personalCode = clubProfile?.code || user?.venditore_code || '1234';
   const shareUrl = `https://rossomandi-auto-srl.vercel.app/?codice=${encodeURIComponent(personalCode)}`;
 
   const showAlert = (title, msg) => {
@@ -115,8 +115,6 @@ export default function SegnalatoreDashboard({ navigation, route }) {
 
   const handleOpenRichiediPreventivo = () => {
     setReqCodiceInvito(personalCode);
-    setReqNome(displayName);
-    setReqEmail(clubProfile?.person_email || user?.email || '');
     setActiveView('richiedi_preventivo');
   };
 
@@ -289,26 +287,30 @@ export default function SegnalatoreDashboard({ navigation, route }) {
 
           {/* ════════════════════════════════════════════════════════════════
               VIEW 2: LA TUA RICHIESTA — Richiedi preventivo auto
-              (Exact page when clicking "Richiedi un preventivo per me")
+              (Exact 1:1 visual match with uploaded screenshot)
              ════════════════════════════════════════════════════════════════ */}
           {activeView === 'richiedi_preventivo' && (
-            <View style={styles.richiestaFormBox}>
+            <View style={styles.richiestaContainer}>
               <Text style={styles.areaPersonaleTag}>LA TUA RICHIESTA</Text>
               <Text style={styles.clubHeading}>Richiedi preventivo auto</Text>
-              <Text style={styles.richiestaSubHeading}>
-                Richiesta di preventivo auto senza costo di invio. I benefit Club richiedono un codice valido.
-              </Text>
 
-              {/* Codice sconto + Verifica sconto */}
+              {/* Grey Rounded Pill Banner */}
+              <View style={styles.greyBannerPill}>
+                <Text style={styles.greyBannerPillText}>
+                  Richiesta di preventivo auto senza costo di invio. I benefit Club richiedono un codice valido.
+                </Text>
+              </View>
+
+              {/* Codice sconto (Full-width input) + Verifica sconto button directly underneath */}
               <Text style={styles.fieldLabel}>Codice sconto</Text>
-              <View style={styles.scontoRow}>
-                <TextInput
-                  style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 10 }]}
-                  placeholder="Inserisci codice"
-                  placeholderTextColor="#9CA3AF"
-                  value={codiceSconto}
-                  onChangeText={setCodiceSconto}
-                />
+              <TextInput
+                style={[styles.input, { marginBottom: 8 }]}
+                placeholder="Inserisci codice"
+                placeholderTextColor="#9CA3AF"
+                value={codiceSconto}
+                onChangeText={setCodiceSconto}
+              />
+              <View style={{ alignItems: 'flex-start', marginBottom: 14 }}>
                 <TouchableOpacity style={styles.verificaScontoBtn} onPress={handleVerificaSconto}>
                   <Text style={styles.verificaScontoBtnText}>Verifica sconto</Text>
                 </TouchableOpacity>
@@ -326,7 +328,7 @@ export default function SegnalatoreDashboard({ navigation, route }) {
               )}
 
               {/* Nome e cognome */}
-              <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Nome e cognome</Text>
+              <Text style={styles.fieldLabel}>Nome e cognome</Text>
               <TextInput
                 style={styles.input}
                 value={reqNome}
@@ -381,7 +383,7 @@ export default function SegnalatoreDashboard({ navigation, route }) {
               ) : (
                 <TextInput
                   style={styles.input}
-                  placeholder="Seleziona provincia (es. PO, FI, MI)"
+                  placeholder="Seleziona provincia"
                   placeholderTextColor="#9CA3AF"
                   value={reqProvincia}
                   onChangeText={setReqProvincia}
@@ -439,13 +441,6 @@ export default function SegnalatoreDashboard({ navigation, route }) {
               <Text style={styles.demoFooterNote}>
                 Demo: nessuna richiesta viene inviata a Rossomandi, nessun file viene caricato sul server e nessun pagamento viene effettuato.
               </Text>
-
-              <TouchableOpacity
-                style={[styles.outlineBtn, { marginTop: 14 }]}
-                onPress={() => setActiveView('club')}
-              >
-                <Text style={styles.outlineBtnText}>← Torna al mio Rossomandi Club</Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -454,7 +449,7 @@ export default function SegnalatoreDashboard({ navigation, route }) {
       {/* Bottom Navigation Bar matching screenshot: Home | Il mio Club | Altro */}
       <View style={styles.bottomNavBar}>
         <TouchableOpacity
-          style={[styles.bottomNavTab, activeView === 'richiedi_preventivo' && styles.bottomNavTabActive]}
+          style={styles.bottomNavTab}
           onPress={() => setActiveView('richiedi_preventivo')}
         >
           <Text style={styles.bottomNavIcon}>⌂</Text>
@@ -462,7 +457,7 @@ export default function SegnalatoreDashboard({ navigation, route }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.bottomNavTab, activeView === 'club' && styles.bottomNavTabActive]}
+          style={styles.bottomNavTab}
           onPress={() => setActiveView('club')}
         >
           <Text style={styles.bottomNavIcon}>▤</Text>
@@ -487,22 +482,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
   },
   scrollContent: {
-    paddingVertical: 24,
+    paddingVertical: 20,
     paddingBottom: 90,
     paddingHorizontal: 14,
     alignItems: 'center',
   },
   mainCard: {
     width: '100%',
-    maxWidth: 820,
+    maxWidth: 880,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 16,
+    padding: 28,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
   topBrandBar: {
     flexDirection: 'row',
@@ -550,32 +545,34 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
   areaPersonaleBox: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
-  richiestaFormBox: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 14,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
+  richiestaContainer: {
+    paddingHorizontal: 4,
   },
   areaPersonaleTag: {
     fontSize: 10,
     fontWeight: '800',
     color: '#DC002E',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
     marginBottom: 4,
   },
   clubHeading: {
     fontSize: 22,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: 6,
+    marginBottom: 12,
   },
-  richiestaSubHeading: {
-    fontSize: 12,
-    color: '#6B7280',
+  greyBannerPill: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
     marginBottom: 16,
+  },
+  greyBannerPillText: {
+    fontSize: 12,
+    color: '#4B5563',
   },
   greetingText: {
     fontSize: 14,
@@ -630,17 +627,13 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     overflow: 'hidden',
   },
-  scontoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   verificaScontoBtn: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#E5E7EB',
     borderRadius: 8,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 10,
   },
   verificaScontoBtnText: {
     fontSize: 12,
@@ -650,7 +643,7 @@ const styles = StyleSheet.create({
   scontoFeedbackText: {
     fontSize: 12,
     fontWeight: '600',
-    marginTop: 6,
+    marginBottom: 12,
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -658,11 +651,11 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
   checkboxBox: {
-    width: 18,
-    height: 18,
+    width: 16,
+    height: 16,
     borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#D1D5DB',
+    borderWidth: 1.2,
+    borderColor: '#9CA3AF',
     marginRight: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -674,20 +667,21 @@ const styles = StyleSheet.create({
   },
   checkboxTick: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
   },
   checkboxLabel: {
     flex: 1,
     fontSize: 12,
     color: '#374151',
-    fontWeight: '500',
+    fontWeight: '400',
   },
   redPrimaryBtn: {
     backgroundColor: '#DC002E',
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderRadius: 8,
+    paddingVertical: 13,
     alignItems: 'center',
+    marginTop: 4,
     marginBottom: 10,
   },
   redPrimaryBtnText: {
