@@ -194,6 +194,11 @@ export default function SegnalatoreDashboard({ navigation, route }) {
             </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {activeView !== 'club' && (
+                <TouchableOpacity style={styles.backToClubBtn} onPress={() => setActiveView('club')}>
+                  <Text style={styles.backToClubBtnText}>← Torna al mio Club</Text>
+                </TouchableOpacity>
+              )}
               {isAdminPreview && (
                 <TouchableOpacity style={styles.adminBackBtn} onPress={() => navigation.goBack()}>
                   <Text style={styles.adminBackBtnText}>← Admin</Text>
@@ -441,6 +446,14 @@ export default function SegnalatoreDashboard({ navigation, route }) {
               <Text style={styles.demoFooterNote}>
                 Demo: nessuna richiesta viene inviata a Rossomandi, nessun file viene caricato sul server e nessun pagamento viene effettuato.
               </Text>
+
+              <TouchableOpacity
+                style={[styles.outlineBtn, { marginTop: 14 }]}
+                onPress={() => setActiveView('club')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.outlineBtnText}>← Torna al mio Club</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -543,6 +556,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#DC2626',
+  },
+  backToClubBtn: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  backToClubBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111827',
   },
   areaPersonaleBox: {
     paddingHorizontal: 4,
