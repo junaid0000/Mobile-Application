@@ -2540,6 +2540,28 @@ async function ensureClubTables() {
       lng NUMERIC(10,6),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS club_richieste (
+      id SERIAL PRIMARY KEY,
+      request_type VARCHAR(50) DEFAULT 'preventivo_personale',
+      segnalatore_code VARCHAR(100),
+      segnalatore_email VARCHAR(255),
+      discount_code VARCHAR(100),
+      client_name VARCHAR(255),
+      client_phone VARCHAR(100),
+      client_email VARCHAR(255),
+      provincia VARCHAR(50),
+      car_details TEXT,
+      marca VARCHAR(100),
+      modello VARCHAR(255),
+      motorizzazione VARCHAR(100),
+      permuta VARCHAR(100),
+      note TEXT,
+      status VARCHAR(50) DEFAULT 'in_corso',
+      contract_signed BOOLEAN DEFAULT false,
+      contract_date VARCHAR(50),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 }
 
@@ -2724,18 +2746,112 @@ app.get('/api/club/me', authenticateToken, async (req, res) => {
     if (userRes.rows.length === 0) return res.status(404).json({ error: 'Utente non trovato' });
     const u = userRes.rows[0];
     const clubRes = await db.query('SELECT * FROM club_utenti WHERE LOWER(person_email) = $1 LIMIT 1', [u.email.toLowerCase()]);
+    const profile = clubRes.rows[0] || {
+      person_name: u.name,
+      person_email: u.email,
+      code: u.venditore_code || '00000',
+      user_type: 'segnalatore',
+      sub_type: 'privato',
+      is_active: true
+    };
+    const reqs = await db.query(
+      'SELECT * FROM club_richieste WHERE LOWER(segnalatore_code) = $1 OR LOWER(segnalatore_email) = $2 ORDER BY created_at DESC',
+      [String(profile.code || '').toLowerCase(), u.email.toLowerCase()]
+    );
     res.json({
       user: u,
-      clubProfile: clubRes.rows[0] || {
-        person_name: u.name,
-        person_email: u.email,
-        code: u.venditore_code || '00000',
-        user_type: 'segnalatore',
-        sub_type: 'privato',
-        is_active: true
-      }
+      clubProfile: profile,
+      richieste: reqs.rows
     });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Verify discount/invite code in club_utenti
+app.post('/api/club/verify-code', async (req, res) => {
+  try {
+    await ensureClubTables();
+    const { code } = req.body;
+    if (!code || !String(code).trim()) {
+      return res.json({ valid: false, message: 'Inserisci un codice da verificare.' });
+    }
+    const cleanCode = String(code).trim().toLowerCase();
+    const found = await db.query(
+      'SELECT person_name, code, is_active, valid_until FROM club_utenti WHERE LOWER(code) = $1 LIMIT 1',
+      [cleanCode]
+    );
+    if (found.rows.length > 0 && found.rows[0].is_active !== false) {
+      return res.json({
+        valid: true,
+        owner: found.rows[0].person_name,
+        code: found.rows[0].code,
+        message: `Codice "${found.rows[0].code}" valido! Benefit Rossomandi Club attivati.`
+      });
+    }
+    return res.json({ valid: false, message: 'Codice non trovato o non attivo.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Submit Richiesta Preventivo Auto ("Richiedi un preventivo per me" or "Segnala un acquirente")
+app.post('/api/club/richiesta-preventivo', async (req, res) => {
+  try {
+    await ensureClubTables();
+    const {
+      request_type = 'preventivo_personale',
+      segnalatore_code,
+      segnalatore_email,
+      discount_code,
+      client_name,
+      client_phone,
+      client_email,
+      provincia,
+      car_details,
+      marca,
+      modello,
+      motorizzazione,
+      permuta,
+      note
+    } = req.body;
+
+    if (!client_name || !client_phone || !client_email) {
+      return res.status(400).json({ error: 'Compila Nome e cognome, Telefono ed Email.' });
+    }
+
+    const inserted = await db.query(`
+      INSERT INTO club_richieste (
+        request_type, segnalatore_code, segnalatore_email, discount_code,
+        client_name, client_phone, client_email, provincia, car_details,
+        marca, modello, motorizzazione, permuta, note
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      RETURNING *;
+    `, [
+      request_type,
+      segnalatore_code || discount_code || null,
+      segnalatore_email || null,
+      discount_code || null,
+      client_name.trim(),
+      client_phone.trim(),
+      client_email.trim(),
+      provincia || null,
+      car_details || null,
+      marca || null,
+      modello || null,
+      motorizzazione || null,
+      permuta || null,
+      note || null
+    ]);
+
+    res.json({
+      success: true,
+      richiesta: inserted.rows[0],
+      message: 'Richiesta di preventivo registrata con successo!'
+    });
+  } catch (err) {
+    console.error('Error saving club richiesta:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
