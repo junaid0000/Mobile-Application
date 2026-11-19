@@ -44,6 +44,17 @@ export default function SellerDashboard({ navigation, route }) {
   const [language, setLanguage] = useState('IT'); // 'IT' | 'EN'
 
   useEffect(() => {
+    if (!token) {
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      return;
+    }
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+      const activeSession = window.sessionStorage.getItem('rossomandi_active_session');
+      if (!activeSession) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      }
+    }
     AsyncStorage.getItem('@app_dark_mode').then(val => {
       if (val !== null) setDarkMode(JSON.parse(val));
     });
@@ -52,7 +63,7 @@ export default function SellerDashboard({ navigation, route }) {
         if (uri) setAvatarUri(uri);
       });
     }
-  }, [user?.id]);
+  }, [user?.id, token, navigation]);
 
   const handleToggleDarkMode = async (val) => {
     setDarkMode(val);

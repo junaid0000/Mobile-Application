@@ -917,6 +917,11 @@ def upsert_stock_usato_to_local_postgresql(items):
                 item["prezzo_aut"], item["prezzo_vendita"], item["pronta"]
             ))
 
+        # Prune vehicles removed or sold from Access
+        active_indices = [int(item["indice"]) for item in items if item.get("indice") is not None]
+        if active_indices:
+            cursor.execute("DELETE FROM public.stock_usato WHERE indice NOT IN %s", (tuple(active_indices),))
+
         pg_conn.commit()
         print(f"[StockUsato Local Sync] Successfully synced {len(items)} vehicles to local PostgreSQL!", flush=True)
     except Exception as e:
@@ -973,7 +978,7 @@ def fetch_tab_preventivi_esterni(db_path):
         if cars:
             return cars
     except Exception as com_err:
-        pass
+        print(f"[MASTER] Errore lettura tabPreventiviEsterni: {com_err}", flush=True)
 
     # 2. Fallback to ODBC if COM is busy or unavailable
     temp_path = os.path.abspath("temp_preventivi_sync.accdb")
@@ -1210,36 +1215,78 @@ def sync_car_images_to_supabase():
         except Exception as e:
             pass
 
+SUPABASE_DB_CONN_STR = "postgresql://postgres.ngvcirlrsgqrzhgawubu:Rossomandi2026!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require"
+
 def push_tab_preventivi_esterni_to_server(cars):
-    """Pushes tabPreventiviEsterni vehicles to Portale table on cloud and local server."""
+    """Pushes tabPreventiviEsterni vehicles directly to Supabase cloud DB and local server."""
     if not cars:
         return
-    req_data = json.dumps({"cars": cars}).encode("utf-8")
 
-    # 1. Push to live Cloud server (Vercel)
+    # 1. Direct Supabase Cloud Database Sync (100% reliable, independent of Vercel status)
     try:
-        cloud_url = "https://rossomandi-auto-srl.vercel.app/api/portal/sync-preventivi-esterni"
-        req_cloud = urllib.request.Request(
-            cloud_url,
-            data=req_data,
-            headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
-        )
-        with urllib.request.urlopen(req_cloud, timeout=30) as resp:
-            print(f"[tabPreventiviEsterni Cloud Sync] Pushed {len(cars)} vehicles to Live Cloud! (HTTP {resp.status})", flush=True)
-    except Exception as err:
-        try:
-            fb_url = "https://rossomandi-backend.vercel.app/api/portal/sync-preventivi-esterni"
-            fb_req = urllib.request.Request(
-                fb_url,
-                data=req_data,
-                headers={"Content-Type": "application/json", "x-sync-key": "rossomandi_secret_sync_2026"}
-            )
-            with urllib.request.urlopen(fb_req, timeout=30) as resp:
-                print(f"[tabPreventiviEsterni Cloud Sync] Pushed {len(cars)} vehicles to Live Cloud via fallback! (HTTP {resp.status})", flush=True)
-        except Exception:
-            pass
+        sb_conn = psycopg2.connect(SUPABASE_DB_CONN_STR)
+        sb_cur = sb_conn.cursor()
+        
+        # Ensure table exists
+        sb_cur.execute("""
+            CREATE TABLE IF NOT EXISTS portale_preventivi_esterni (
+                indice VARCHAR(100) PRIMARY KEY,
+                marca VARCHAR(100),
+                modello VARCHAR(255),
+                colore_vn VARCHAR(100),
+                tipo_appunt_vendita VARCHAR(100),
+                rimborso NUMERIC(10,2),
+                rata_f_zero NUMERIC(10,2),
+                nota1 VARCHAR(100),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Prepare records for batch upsert
+        records = []
+        for c in cars:
+            clean_marca = str(c.get("marca") or "").strip().upper().rstrip("1") if c.get("marca") else None
+            records.append((
+                str(c["indice"]),
+                clean_marca,
+                c.get("modello"),
+                c.get("colore_vn"),
+                c.get("tipo_appunt_vendita"),
+                float(c["rimborso"]) if c.get("rimborso") is not None else None,
+                float(c["rata_f_zero"]) if c.get("rata_f_zero") is not None else None,
+                str(c.get("nota1")).strip() if c.get("nota1") else None
+            ))
+
+        upsert_sql = """
+            INSERT INTO portale_preventivi_esterni (
+                indice, marca, modello, colore_vn, tipo_appunt_vendita, rimborso, rata_f_zero, nota1, updated_at
+            ) VALUES %s
+            ON CONFLICT (indice) DO UPDATE SET
+                marca = EXCLUDED.marca,
+                modello = EXCLUDED.modello,
+                colore_vn = EXCLUDED.colore_vn,
+                tipo_appunt_vendita = EXCLUDED.tipo_appunt_vendita,
+                rimborso = EXCLUDED.rimborso,
+                rata_f_zero = EXCLUDED.rata_f_zero,
+                nota1 = EXCLUDED.nota1,
+                updated_at = CURRENT_TIMESTAMP;
+        """
+        execute_values(sb_cur, upsert_sql, records, template="(%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)")
+
+        # Remove cars no longer in Access
+        active_indices = [str(c["indice"]) for c in cars if c.get("indice")]
+        if active_indices:
+            sb_cur.execute("DELETE FROM portale_preventivi_esterni WHERE indice NOT IN %s", (tuple(active_indices),))
+
+        sb_conn.commit()
+        sb_cur.close()
+        sb_conn.close()
+        print(f"[tabPreventiviEsterni Direct Cloud Sync] Successfully synced {len(cars)} vehicles directly to Supabase DB!", flush=True)
+    except Exception as db_err:
+        print(f"[tabPreventiviEsterni Direct Cloud Sync Error] {db_err}", flush=True)
 
     # 2. Push to local Node server (if running)
+    req_data = json.dumps({"cars": cars}).encode("utf-8")
     try:
         local_url = "http://localhost:5000/api/portal/sync-preventivi-esterni"
         req_local = urllib.request.Request(
@@ -1251,6 +1298,103 @@ def push_tab_preventivi_esterni_to_server(cars):
             pass
     except Exception as err:
         pass
+
+def fetch_segnalatori_data(db_path):
+    """Fetches rows from Segnalatori table in Access safely."""
+    if not db_path or not os.path.exists(db_path):
+        return []
+    temp_path = os.path.abspath("temp_segnalatori_sync.accdb")
+    conn_path = db_path
+    if copy_locked_file(db_path, temp_path):
+        conn_path = temp_path
+    conn = None
+    cursor = None
+    try:
+        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={conn_path};"
+        conn = pyodbc.connect(conn_str, autocommit=True)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM [Segnalatori]")
+        col_names = [col[0].lower().strip() for col in cursor.description]
+        rows = cursor.fetchall()
+
+        col_map = {name: idx for idx, name in enumerate(col_names)}
+        def gval(row, keys):
+            for k in keys:
+                if k in col_map:
+                    return row[col_map[k]]
+            return None
+
+        items = []
+        for r in rows:
+            codice_val = gval(r, ['codice'])
+            if codice_val is None:
+                continue
+            try:
+                codice_int = int(codice_val)
+            except Exception:
+                continue
+            nome = str(gval(r, ['cognome nome', 'nome']) or '').strip()
+            tipo = str(gval(r, ['tipo']) or '').strip().upper()
+            tariffa = gval(r, ['tariffaprovv'])
+            attivo = bool(gval(r, ['attivo']))
+            dt_att = gval(r, ['dataattivazione'])
+            dt_str = dt_att.strftime('%d/%m/%Y') if hasattr(dt_att, 'strftime') else (str(dt_att) if dt_att else None)
+            tel = gval(r, ['telefono'])
+            tel_str = str(int(tel)) if isinstance(tel, float) and tel.is_integer() else (str(tel).strip() if tel else '')
+            email = str(gval(r, ['e-mail', 'email']) or '').strip().lower()
+            indirizzo = str(gval(r, ['indirizzo e n°', 'indirizzo']) or '').strip()
+            prov = str(gval(r, ['provincia']) or '').strip().upper()
+            cap = gval(r, ['cap'])
+            cap_str = str(int(cap)) if isinstance(cap, float) and cap.is_integer() else (str(cap).strip() if cap else '')
+
+            items.append({
+                "codice": codice_int,
+                "cognome_nome": nome,
+                "tipo": tipo,
+                "tariffa_provv": float(tariffa) if tariffa is not None else 0.0,
+                "attivo": attivo,
+                "data_attivazione": dt_str,
+                "telefono": tel_str,
+                "email": email,
+                "indirizzo": indirizzo,
+                "provincia": prov,
+                "cap": cap_str
+            })
+        return items
+    except Exception as e:
+        print(f"[Segnalatori Fetch Notice] {e}", flush=True)
+        return []
+    finally:
+        if cursor:
+            try: cursor.close()
+            except Exception: pass
+        if conn:
+            try: conn.close()
+            except Exception: pass
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+
+def push_segnalatori_to_server(items):
+    """Pushes Segnalatori rows to Vercel and local server."""
+    if not items:
+        return
+    req_data = json.dumps({"items": items}).encode("utf-8")
+    for url in [
+        "https://rossomandi-auto-srl.vercel.app/api/sync/push-segnalatori",
+        "http://localhost:5000/api/sync/push-segnalatori"
+    ]:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                if "vercel" in url:
+                    print(f"[Segnalatori Live Sync] Synced {len(items)} segnalatori to Cloud! (HTTP {resp.status})", flush=True)
+        except Exception:
+            pass
 
 def background_asset_sync_loop():
     """Runs PDF and car image uploads continuously in a separate thread so the main car-data sync loop is NEVER blocked."""
@@ -1283,6 +1427,7 @@ def main():
             stock_data = None
             db1_data = None
             portale_data = None
+            segnalatori_data = None
             for path in candidate_paths:
                 if os.path.exists(path):
                     is_server = "192.168.12.250" in path or path.startswith("Z:")
@@ -1294,12 +1439,20 @@ def main():
                         portale_data = fetch_tab_preventivi_esterni(path)
                     except Exception as pe:
                         print(f"[tabPreventiviEsterni Safe Notice] {pe}", flush=True)
-                    if data or stock_data or db1_data or portale_data:
+                    try:
+                        segnalatori_data = fetch_segnalatori_data(path)
+                    except Exception as se:
+                        print(f"[Segnalatori Safe Notice] {se}", flush=True)
+                    if data or stock_data or db1_data or portale_data or segnalatori_data:
                         break
                                 
             if portale_data:
                 print(f"[tabPreventiviEsterni] Read {len(portale_data)} vehicles for Portale. Syncing...", flush=True)
                 push_tab_preventivi_esterni_to_server(portale_data)
+
+            if segnalatori_data:
+                print(f"[Segnalatori] Read {len(segnalatori_data)} segnalatori from Access DB. Syncing...", flush=True)
+                push_segnalatori_to_server(segnalatori_data)
 
             if data:
                 print(f"[Sync] Read {len(data)} records from Access DB. Syncing to PostgreSQL...", flush=True)

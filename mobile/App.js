@@ -16,6 +16,9 @@ import PortalListScreen from './screens/PortalListScreen';
 import PortalCarDetailScreen from './screens/PortalCarDetailScreen';
 import PortalShowcaseScreen from './screens/PortalShowcaseScreen';
 import PortalShowcaseDetailScreen from './screens/PortalShowcaseDetailScreen';
+import SegnalatoreScreen from './screens/SegnalatoreScreen';
+import AdminSegnalatoriScreen from './screens/AdminSegnalatoriScreen';
+import QrPreventivoScreen from './screens/QrPreventivoScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
 import * as Updates from 'expo-updates';
@@ -42,6 +45,9 @@ const linking = {
       PortalHub: 'hub',
       PortalShowcase: 'portale',
       PortalShowcaseDetail: 'portale/:id',
+      SegnalatoreScreen: 'segnalatore',
+      AdminSegnalatori: 'admin-segnalatori',
+      QrPreventivo: 'preventivo-qr',
     },
   },
 };
@@ -132,6 +138,23 @@ export default function App() {
           <Stack.Screen 
             name="PortalShowcaseDetail" 
             component={PortalShowcaseDetailScreen} 
+            options={{ headerShown: false }} 
+          />
+
+          {/* Segnalatori Access & QR Code Screens */}
+          <Stack.Screen 
+            name="SegnalatoreScreen" 
+            component={SegnalatoreScreen} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="AdminSegnalatori" 
+            component={AdminSegnalatoriScreen} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="QrPreventivo" 
+            component={QrPreventivoScreen} 
             options={{ headerShown: false }} 
           />
         </Stack.Navigator>

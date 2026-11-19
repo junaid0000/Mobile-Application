@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../config/apiConfig';
 
@@ -26,6 +28,17 @@ export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   const API_URL = `${BASE_URL}/api/auth/login`;
+
+  // Whenever the user exits or hits browser Back to the Login page, immediately invalidate the session
+  // so pressing Forward cannot re-enter without logging in again!
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.removeItem('rossomandi_active_session');
+      }
+      AsyncStorage.removeItem('@active_auth_session').catch(() => {});
+    }, [])
+  );
 
   const handleLogin = async () => {
     const cleanEmail = email.toLowerCase().trim();
@@ -42,10 +55,17 @@ export default function LoginScreen({ navigation }) {
       );
       const { user, token } = response.data;
 
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.setItem('rossomandi_active_session', token);
+      }
+      await AsyncStorage.setItem('@active_auth_session', token).catch(() => {});
+
       if (user.role === 'admin') {
-        navigation.navigate('AdminDashboard', { user, token });
+        navigation.reset({ index: 0, routes: [{ name: 'AdminDashboard', params: { user, token } }] });
+      } else if (user.role === 'segnalatore') {
+        navigation.reset({ index: 0, routes: [{ name: 'SegnalatoreScreen', params: { user, token } }] });
       } else {
-        navigation.navigate('SellerDashboard', { user, token });
+        navigation.reset({ index: 0, routes: [{ name: 'SellerDashboard', params: { user, token } }] });
       }
     } catch (error) {
       console.error('Login Error:', error);

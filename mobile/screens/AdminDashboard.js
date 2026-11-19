@@ -62,6 +62,17 @@ export default function AdminDashboard({ navigation, route }) {
   const [language, setLanguage] = useState('IT'); // 'IT' | 'EN'
 
   useEffect(() => {
+    if (!token) {
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      return;
+    }
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+      const activeSession = window.sessionStorage.getItem('rossomandi_active_session');
+      if (!activeSession) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      }
+    }
     AsyncStorage.getItem('@app_dark_mode').then(val => {
       if (val !== null) setDarkMode(JSON.parse(val));
     });
@@ -70,7 +81,7 @@ export default function AdminDashboard({ navigation, route }) {
         if (uri) setAvatarUri(uri);
       });
     }
-  }, [user?.id]);
+  }, [user?.id, token, navigation]);
 
   const handleToggleDarkMode = async (val) => {
     setDarkMode(val);
@@ -328,6 +339,18 @@ export default function AdminDashboard({ navigation, route }) {
               <View style={styles.clayButtonInner}>
                 <Text style={styles.clayButtonEmoji}>📋</Text>
                 <Text style={[styles.clayButtonText, { color: '#38BDF8' }]}>Portale</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Button: Segnalatore */}
+            <TouchableOpacity
+              style={[styles.clay3DButton, { backgroundColor: '#1E1B2E', borderColor: '#FF4757', borderWidth: 1.5 }]}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('AdminSegnalatori', { user, token })}
+            >
+              <View style={styles.clayButtonInner}>
+                <Text style={styles.clayButtonEmoji}>📣</Text>
+                <Text style={[styles.clayButtonText, { color: '#FF4757' }]}>Segnalatore</Text>
               </View>
             </TouchableOpacity>
 
