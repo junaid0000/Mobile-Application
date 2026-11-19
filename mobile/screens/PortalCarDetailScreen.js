@@ -442,7 +442,7 @@ export default function PortalCarDetailScreen({ navigation, route }) {
                     </TouchableOpacity>
                   </>
                 ) : (
-                  <>
+                  <> 
                     <TouchableOpacity
                       style={[styles.pdfActionBtn, styles.emailPdfBtn]}
                       activeOpacity={0.85}

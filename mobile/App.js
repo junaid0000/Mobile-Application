@@ -16,8 +16,6 @@ import PortalListScreen from './screens/PortalListScreen';
 import PortalCarDetailScreen from './screens/PortalCarDetailScreen';
 import PortalShowcaseScreen from './screens/PortalShowcaseScreen';
 import PortalShowcaseDetailScreen from './screens/PortalShowcaseDetailScreen';
-import AdminClubScreen from './screens/AdminClubScreen';
-import SegnalatoreDashboard from './screens/SegnalatoreDashboard';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
 import * as Updates from 'expo-updates';
@@ -44,8 +42,6 @@ const linking = {
       PortalHub: 'hub',
       PortalShowcase: 'portale',
       PortalShowcaseDetail: 'portale/:id',
-      AdminClub: 'admin-club',
-      SegnalatoreDashboard: 'segnalatore',
     },
   },
 };
@@ -136,18 +132,6 @@ export default function App() {
           <Stack.Screen 
             name="PortalShowcaseDetail" 
             component={PortalShowcaseDetailScreen} 
-            options={{ headerShown: false }} 
-          />
-
-          {/* Rossomandi Club / Segnalatori Isolated Module */}
-          <Stack.Screen 
-            name="AdminClub" 
-            component={AdminClubScreen} 
-            options={{ headerShown: false }} 
-          />
-          <Stack.Screen 
-            name="SegnalatoreDashboard" 
-            component={SegnalatoreDashboard} 
             options={{ headerShown: false }} 
           />
         </Stack.Navigator>

@@ -39,7 +39,7 @@ export default function SignupScreen({ navigation }) {
       return;
     }
 
-    if (role !== 'admin' && role !== 'segnalatore' && !isKnownAdminEmail && !securityCode.trim()) {
+    if (role !== 'admin' && !isKnownAdminEmail && !securityCode.trim()) {
       Alert.alert('Codice Richiesto', 'Inserisci il Codice di Sicurezza Aziendale per completare la registrazione.');
       return;
     }
@@ -51,7 +51,7 @@ export default function SignupScreen({ navigation }) {
         email,
         password,
         role,
-        venditore_code: (role === 'seller' || role === 'segnalatore') ? venditoreCode.trim().toUpperCase() : null,
+        venditore_code: role === 'seller' ? venditoreCode.trim().toUpperCase() : null,
         admin_code: role === 'admin' ? adminCode.trim() : null,
         security_code: securityCode.trim(),
       });
@@ -102,27 +102,12 @@ export default function SignupScreen({ navigation }) {
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.rolePill, role === 'segnalatore' && styles.rolePillActive]} 
-            onPress={() => setRole('segnalatore')}
-          >
-            <Text style={[styles.rolePillText, role === 'segnalatore' && styles.rolePillTextActive]}>📣 Segnalatore</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
             style={[styles.rolePill, role === 'admin' && styles.rolePillActive]} 
             onPress={() => setRole('admin')}
           >
             <Text style={[styles.rolePillText, role === 'admin' && styles.rolePillTextActive]}>👑 Admin</Text>
           </TouchableOpacity>
         </View>
-
-        {role === 'segnalatore' && (
-          <View style={styles.roleInfoBox}>
-            <Text style={styles.roleInfoText}>
-              📣 <Text style={{ fontWeight: '700', color: '#FF4757' }}>Segnalatore (Rossomandi Club):</Text> Area Personale dedicata con il tuo Codice Personale per invitare e segnalare clienti.
-            </Text>
-          </View>
-        )}
 
         {role === 'external' && (
           <View style={styles.roleInfoBox}>
@@ -209,22 +194,8 @@ export default function SignupScreen({ navigation }) {
           </View>
         )}
 
-        {/* Segnalatore Optional Personal Code Input */}
-        {role === 'segnalatore' && (
-          <View style={styles.sellerCodeBox}>
-            <Text style={styles.sellerCodeLabel}>Codice Invito / Codice Personale (Opzionale):</Text>
-            <TextInput
-              style={[styles.input, { borderColor: '#FF4757', marginBottom: 0 }]}
-              placeholder="Inserisci codice se già ricevuto (o lascia vuoto per generarlo)"
-              placeholderTextColor="#94A3B8"
-              value={venditoreCode}
-              onChangeText={setVenditoreCode}
-            />
-          </View>
-        )}
-
         {/* Company Security Passcode Input (For Seller, External, Staff) */}
-        {role !== 'admin' && role !== 'segnalatore' && (
+        {role !== 'admin' && (
           <View style={styles.securityCodeBox}>
             <Text style={styles.securityCodeLabel}>🔒 Codice di Sicurezza Aziendale *:</Text>
             <TextInput
