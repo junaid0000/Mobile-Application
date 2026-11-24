@@ -2583,8 +2583,10 @@ app.post('/api/sync/push-segnalatori', async (req, res) => {
       const tipo = String(item.tipo || '').trim().toUpperCase();
       const fullCode = `${codice}${tipo}`;
       const cognomeNome = String(item.cognome_nome || '').trim();
+      if (!cognomeNome) continue;
       const rawEmail = item.email ? String(item.email).toLowerCase().trim() : '';
-      const cleanEmail = rawEmail.includes('@') ? rawEmail : '';
+      const firstEmailToken = rawEmail ? rawEmail.split()[0].replace(/#/g, '').replace('mailto:', '').trim() : '';
+      const cleanEmail = firstEmailToken.includes('@') ? firstEmailToken : '';
       const attivo = Boolean(item.attivo);
       const tariffa = parseFloat(item.tariffa_provv || 0) || 0;
       const telefono = item.telefono ? String(item.telefono).replace(/\.0$/, '').trim() : '';

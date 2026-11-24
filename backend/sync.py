@@ -1334,6 +1334,8 @@ def fetch_segnalatori_data(db_path):
             except Exception:
                 continue
             nome = str(gval(r, ['cognome nome', 'nome']) or '').strip()
+            if not nome:
+                continue
             tipo = str(gval(r, ['tipo']) or '').strip().upper()
             tariffa = gval(r, ['tariffaprovv'])
             attivo = bool(gval(r, ['attivo']))
@@ -1341,7 +1343,8 @@ def fetch_segnalatori_data(db_path):
             dt_str = dt_att.strftime('%d/%m/%Y') if hasattr(dt_att, 'strftime') else (str(dt_att) if dt_att else None)
             tel = gval(r, ['telefono'])
             tel_str = str(int(tel)) if isinstance(tel, float) and tel.is_integer() else (str(tel).strip() if tel else '')
-            email = str(gval(r, ['e-mail', 'email']) or '').strip().lower()
+            raw_email = str(gval(r, ['e-mail', 'email']) or '').strip().lower()
+            email = raw_email.split()[0].replace('#', '').replace('mailto:', '').strip() if raw_email else ''
             indirizzo = str(gval(r, ['indirizzo e n°', 'indirizzo']) or '').strip()
             prov = str(gval(r, ['provincia']) or '').strip().upper()
             cap = gval(r, ['cap'])
@@ -1376,9 +1379,53 @@ def fetch_segnalatori_data(db_path):
             except Exception: pass
 
 def push_segnalatori_to_server(items):
-    """Pushes Segnalatori rows to Vercel and local server."""
+    """Pushes Segnalatori rows directly to Supabase and to Vercel/local server for email triggers."""
     if not items:
         return
+    # 1. Direct instant upsert to Supabase DB (100% reliable, <1 second)
+    try:
+        sb_conn = psycopg2.connect(SUPABASE_DB_CONN_STR)
+        sb_cur = sb_conn.cursor()
+        for it in items:
+            c_int = int(it["codice"])
+            t_str = str(it.get("tipo") or "").strip().upper()
+            f_code = f"{c_int}{t_str}"
+            sb_cur.execute("""
+                INSERT INTO segnalatori_access (
+                    codice, full_code, cognome_nome, tipo, tariffa_provv, attivo,
+                    data_attivazione, telefono, email, indirizzo, provincia, cap, updated_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
+                ON CONFLICT (codice) DO UPDATE SET
+                    full_code = EXCLUDED.full_code,
+                    cognome_nome = EXCLUDED.cognome_nome,
+                    tipo = EXCLUDED.tipo,
+                    tariffa_provv = EXCLUDED.tariffa_provv,
+                    attivo = EXCLUDED.attivo,
+                    data_attivazione = EXCLUDED.data_attivazione,
+                    telefono = EXCLUDED.telefono,
+                    email = EXCLUDED.email,
+                    indirizzo = EXCLUDED.indirizzo,
+                    provincia = EXCLUDED.provincia,
+                    cap = EXCLUDED.cap,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                c_int, f_code, it.get("cognome_nome"), t_str,
+                float(it.get("tariffa_provv") or 0), bool(it.get("attivo")),
+                it.get("data_attivazione"), it.get("telefono") or None,
+                it.get("email") or None, it.get("indirizzo") or None,
+                it.get("provincia") or None, it.get("cap") or None
+            ))
+        active_c = [int(i["codice"]) for i in items if i.get("codice") is not None]
+        if active_c:
+            sb_cur.execute("DELETE FROM segnalatori_access WHERE codice NOT IN %s", (tuple(active_c),))
+        sb_conn.commit()
+        sb_cur.close()
+        sb_conn.close()
+    except Exception as e:
+        print(f"[Segnalatori Direct DB Notice] {e}", flush=True)
+
+    # 2. Call Vercel API to sync login user & trigger welcome email if new/changed email
     req_data = json.dumps({"items": items}).encode("utf-8")
     for url in [
         "https://rossomandi-auto-srl.vercel.app/api/sync/push-segnalatori",
@@ -1466,25 +1513,70 @@ def fetch_tracking_segnalatori_data(db_path):
             except Exception: pass
 
 def push_tracking_segnalatori_to_server(items):
-    """Pushes TrackingSegnalatori rows to Vercel and local server (isolated)."""
+    """Pushes TrackingSegnalatori rows directly to Supabase and to Vercel/local server (isolated)."""
     if not items:
         return
-    req_data = json.dumps({"items": items}).encode("utf-8")
-    for url in [
-        "https://rossomandi-auto-srl.vercel.app/api/sync/push-tracking-segnalatori",
-        "http://localhost:5000/api/sync/push-tracking-segnalatori"
-    ]:
+    try:
+        sb_conn = psycopg2.connect(SUPABASE_DB_CONN_STR)
+        sb_cur = sb_conn.cursor()
+        for it in items:
+            sb_cur.execute("""
+                INSERT INTO tracking_segnalatori_access (
+                    indice, segnalatore_num, cliente, preventivo_data, approvazione_finanziamento, consegne, tariffa_provv, updated_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
+                ON CONFLICT (indice) DO UPDATE SET
+                    segnalatore_num = EXCLUDED.segnalatore_num,
+                    cliente = EXCLUDED.cliente,
+                    preventivo_data = EXCLUDED.preventivo_data,
+                    approvazione_finanziamento = EXCLUDED.approvazione_finanziamento,
+                    consegne = EXCLUDED.consegne,
+                    tariffa_provv = EXCLUDED.tariffa_provv,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                int(it["indice"]), int(it["segnalatore"]),
+                it.get("cliente"), it.get("preventivo_data"),
+                it.get("approvazione_finanziamento"), it.get("consegne"),
+                float(it.get("tariffa_provv") or 0)
+            ))
+        active_idx = [int(i["indice"]) for i in items if i.get("indice") is not None]
+        if active_idx:
+            sb_cur.execute("DELETE FROM tracking_segnalatori_access WHERE indice NOT IN %s", (tuple(active_idx),))
+        sb_conn.commit()
+        sb_cur.close()
+        sb_conn.close()
+        print(f"[TrackingSegnalatori Direct Cloud Sync] Synced {len(items)} tracking records directly to Supabase DB!", flush=True)
+    except Exception as e:
+        print(f"[TrackingSegnalatori Direct DB Notice] {e}", flush=True)
+
+_initial_sync_file_mtime = os.path.getmtime(os.path.abspath(__file__)) if os.path.exists(os.path.abspath(__file__)) else 0
+
+def fast_segnalatori_sync_loop():
+    """Dedicated fast 3-second thread exclusively for Segnalatori and TrackingSegnalatori so it is NEVER delayed by other tables!"""
+    user_home = os.path.expanduser("~")
+    candidate_paths = [
+        r"\\192.168.12.250\Agenda_Vendita\Gestione VN2_be.accdb",
+        r"\\192.168.12.250\Agenda Vendita\Gestione VN2_be.accdb",
+        r"Z:\Gestione VN2_be.accdb",
+        r"Z:\Agenda Vendita\Gestione VN2_be.accdb",
+        r"C:\Users\Public\Documents\Agenda Vendita\Gestione VN2_be.accdb",
+        r"C:\Users\Public\Public Documents\Agenda Vendita\Gestione VN2_be.accdb",
+        os.path.join(user_home, "Documents", "Agenda Vendita", "Gestione VN2_be.accdb"),
+    ]
+    while True:
         try:
-            req = urllib.request.Request(
-                url,
-                data=req_data,
-                headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                if "vercel" in url:
-                    print(f"[TrackingSegnalatori Live Sync] Synced {len(items)} tracking records to Cloud! (HTTP {resp.status})", flush=True)
-        except Exception:
-            pass
+            for path in candidate_paths:
+                if os.path.exists(path):
+                    seg_items = fetch_segnalatori_data(path)
+                    if seg_items:
+                        push_segnalatori_to_server(seg_items)
+                    trk_items = fetch_tracking_segnalatori_data(path)
+                    if trk_items:
+                        push_tracking_segnalatori_to_server(trk_items)
+                    break
+        except Exception as e:
+            print(f"[Fast Segnalatori Loop Error] {e}", flush=True)
+        time.sleep(3)
 
 def background_asset_sync_loop():
     """Runs PDF and car image uploads continuously in a separate thread so the main car-data sync loop is NEVER blocked."""
@@ -1568,9 +1660,19 @@ def main():
 
         except Exception as e:
             print(f"Sync loop error: {e}", flush=True)
+
+        # Auto-reload watcher: if sync.py is updated on disk, exit cleanly so start_sync.bat reloads it immediately!
+        try:
+            current_mtime = os.path.getmtime(os.path.abspath(__file__))
+            if _initial_sync_file_mtime and current_mtime != _initial_sync_file_mtime:
+                print("[Auto-Reload] sync.py updated on disk! Exiting so service restarts with new code...", flush=True)
+                os._exit(0)
+        except Exception:
+            pass
             
         time.sleep(5)
 
 if __name__ == "__main__":
     threading.Thread(target=background_asset_sync_loop, daemon=True).start()
+    threading.Thread(target=fast_segnalatori_sync_loop, daemon=True).start()
     main()

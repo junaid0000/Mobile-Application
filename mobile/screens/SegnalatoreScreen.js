@@ -233,6 +233,10 @@ export default function SegnalatoreScreen({ navigation, route }) {
   useEffect(() => {
     if (activeTab === 'history' || activeTab === 'qr') {
       fetchHistory();
+      const interval = setInterval(() => {
+        fetchHistory();
+      }, 5000);
+      return () => clearInterval(interval);
     }
   }, [activeTab, fetchHistory]);
 

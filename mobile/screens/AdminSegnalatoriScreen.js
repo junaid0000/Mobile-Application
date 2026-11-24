@@ -41,6 +41,10 @@ export default function AdminSegnalatoriScreen({ navigation, route }) {
 
   useEffect(() => {
     fetchSegnalatori();
+    const interval = setInterval(() => {
+      fetchSegnalatori();
+    }, 5000);
+    return () => clearInterval(interval);
   }, [fetchSegnalatori]);
 
   const filteredList = useMemo(() => {
