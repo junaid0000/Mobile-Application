@@ -2506,10 +2506,40 @@ async function ensureSegnalatoriTable() {
       cap VARCHAR(20),
       welcome_email_sent BOOLEAN DEFAULT false,
       last_emailed_to VARCHAR(255),
+      custom_password_set BOOLEAN DEFAULT false,
       last_login_at TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS segnalatori_clienti_history (
+      id SERIAL PRIMARY KEY,
+      segnalatore_code VARCHAR(50),
+      segnalatore_name VARCHAR(255),
+      client_name VARCHAR(255),
+      client_phone VARCHAR(100),
+      client_email VARCHAR(255),
+      message TEXT,
+      channel VARCHAR(30) DEFAULT 'email',
+      contract_status VARCHAR(50) DEFAULT 'In corso',
+      contract_signed BOOLEAN DEFAULT false,
+      contract_date VARCHAR(50),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tracking_segnalatori_access (
+      indice INT PRIMARY KEY,
+      segnalatore_num INT,
+      cliente VARCHAR(255),
+      preventivo_data VARCHAR(50),
+      approvazione_finanziamento VARCHAR(50),
+      consegne VARCHAR(50),
+      tariffa_provv NUMERIC(10,2) DEFAULT 0,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+  try {
+    await db.query('ALTER TABLE segnalatori_access ADD COLUMN IF NOT EXISTS custom_password_set BOOLEAN DEFAULT false');
+  } catch (e) {}
 }
 
 function getSmtpTransporter() {
@@ -2614,18 +2644,27 @@ app.post('/api/sync/push-segnalatori', async (req, res) => {
 
       // Sync login account in `users` table if they have a valid email (or allow login by code)
       const loginEmail = cleanEmail || `${fullCode.toLowerCase()}@segnalatore.rossomandi.com`;
-      const defaultPlainPass = fullCode; // Simple password = their code e.g. 20C
+      const defaultPlainPass = fullCode; // Simple initial password = their code e.g. 20C
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(defaultPlainPass, salt);
+      const hasCustomPass = existing && existing.custom_password_set === true;
 
       const userCheck = await db.query('SELECT id, role, email FROM users WHERE LOWER(email) = $1 OR UPPER(venditore_code) = $2 LIMIT 1', [loginEmail, fullCode]);
       if (userCheck.rows.length > 0) {
         const uRow = userCheck.rows[0];
         if (uRow.role === 'segnalatore') {
-          await db.query(
-            'UPDATE users SET name = $1, email = $2, venditore_code = $3, password = $4 WHERE id = $5',
-            [cognomeNome, loginEmail, fullCode, hashedPassword, uRow.id]
-          );
+          if (hasCustomPass) {
+            // Do NOT overwrite custom password chosen by the Segnalatore!
+            await db.query(
+              'UPDATE users SET name = $1, email = $2, venditore_code = $3 WHERE id = $4',
+              [cognomeNome, loginEmail, fullCode, uRow.id]
+            );
+          } else {
+            await db.query(
+              'UPDATE users SET name = $1, email = $2, venditore_code = $3, password = $4 WHERE id = $5',
+              [cognomeNome, loginEmail, fullCode, hashedPassword, uRow.id]
+            );
+          }
         }
       } else {
         await db.query(
@@ -2639,12 +2678,12 @@ app.post('/api/sync/push-segnalatori', async (req, res) => {
         try {
           const transporter = getSmtpTransporter();
           const appUrl = 'https://rossomandi-auto-srl.vercel.app/';
-          const mailBody = `Gentile ${cognomeNome},\n\nIl tuo account Segnalatore Rossomandi Auto è attivo!\n\nEcco le tue credenziali per accedere all'applicazione:\n🔗 Link Applicazione: ${appUrl}\n📧 Email (Utente): ${cleanEmail}\n🔑 Password: ${defaultPlainPass}\n🏷️ Il tuo Codice Personale: ${fullCode}\n\nAccedi all'applicazione per visualizzare il tuo QR Code / Barcode personale da far scansionare ai tuoi clienti.\n\nCordiali saluti,\nRossomandi Auto S.R.L.`;
+          const mailBody = `Gentile ${cognomeNome},\n\nIl tuo account Segnalatore Rossomandi Auto è attivo!\n\nEcco le tue credenziali per accedere all'applicazione:\n🔗 Link Applicazione (Accedi o Installa): ${appUrl}\n📧 Email (Utente): ${cleanEmail}\n🔑 Password iniziale: ${defaultPlainPass}\n🏷️ Il tuo Codice Personale: ${fullCode}\n\nSe non hai ancora installato l'applicazione, apri il link ${appUrl} dal tuo smartphone o browser per accedere subito. All'interno della tua area potrai modificare la tua password personale in qualsiasi momento.\n\nCordiali saluti,\nRossomandi Auto S.R.L.`;
 
           await transporter.sendMail({
             from: '"Rossomandi Auto" <preventivi@rossomandi.com>',
             to: cleanEmail,
-            subject: `Benvenuto in Rossomandi Auto - Il tuo Codice Segnalatore: ${fullCode}`,
+            subject: `Benvenuto in Rossomandi Auto - Credenziali e Codice Segnalatore: ${fullCode}`,
             text: mailBody
           });
 
@@ -2701,48 +2740,303 @@ app.get('/api/segnalatori/public/:code', async (req, res) => {
   }
 });
 
-// POST send client's quote request from QR scan directly to junaidmunir.janjua@rossomandi.com
+// POST send client's quote request from QR scan directly to junaidmunir.janjua@rossomandi.com or log WhatsApp request
 app.post('/api/segnalatori/send-preventivo-request', async (req, res) => {
   try {
-    const { segnalatore_code, segnalatore_name, client_name, client_phone, client_email, message } = req.body;
+    await ensureSegnalatoriTable();
+    const { segnalatore_code, segnalatore_name, client_name, client_phone, client_email, message, channel = 'email' } = req.body;
     if (!client_name || !client_phone) {
       return res.status(400).json({ error: 'Inserisci Nome e Telefono.' });
     }
 
     const codeDisplay = String(segnalatore_code || 'N/D').toUpperCase();
-    const targetBdcEmail = 'junaidmunir.janjua@rossomandi.com';
-    const transporter = getSmtpTransporter();
 
-    const mailSubject = `Nuova Richiesta Preventivo da QR Segnalatore [${codeDisplay}] - Cliente: ${client_name}`;
-    const mailText = `Nuova richiesta di preventivo ricevuta tramite scansione QR Code Segnalatore!\n\n` +
-      `═══════════════════════════════════════\n` +
-      `🏷️ CODICE SEGNALATORE: ${codeDisplay}\n` +
-      `🤝 NOME SEGNALATORE: ${segnalatore_name || 'Segnalatore Rossomandi'}\n` +
-      `═══════════════════════════════════════\n\n` +
-      `👤 DATI DEL CLIENTE:\n` +
-      `• Nome e Cognome: ${client_name}\n` +
-      `• Telefono: ${client_phone}\n` +
-      `• Email: ${client_email || 'Non specificata'}\n\n` +
-      `🚗 AUTO RICHIESTA / MESSAGGIO:\n` +
-      `${message || 'Richiesta contatto per preventivo auto.'}\n\n` +
-      `═══════════════════════════════════════\n` +
-      `Contattare il cliente per fissare un appuntamento in sede.`;
+    // 1. Save client referral into segnalatori_clienti_history with status "In corso"
+    const historyInsert = await db.query(`
+      INSERT INTO segnalatori_clienti_history (
+        segnalatore_code, segnalatore_name, client_name, client_phone, client_email, message, channel, contract_status, contract_signed
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'In corso', false)
+      RETURNING *;
+    `, [
+      codeDisplay,
+      segnalatore_name || 'Segnalatore Rossomandi',
+      client_name.trim(),
+      client_phone.trim(),
+      client_email ? client_email.trim() : null,
+      message ? message.trim() : null,
+      channel
+    ]);
 
-    await transporter.sendMail({
-      from: '"Rossomandi Segnalatori QR" <preventivi@rossomandi.com>',
-      to: targetBdcEmail,
-      replyTo: client_email || undefined,
-      subject: mailSubject,
-      text: mailText
-    });
+    // 2. If channel is email (or both), send email to BDC
+    if (channel !== 'whatsapp_only') {
+      const targetBdcEmail = 'junaidmunir.janjua@rossomandi.com';
+      const transporter = getSmtpTransporter();
+
+      const mailSubject = `Nuova Richiesta Preventivo da QR Segnalatore [${codeDisplay}] - Cliente: ${client_name}`;
+      const mailText = `Nuova richiesta di preventivo ricevuta tramite scansione QR Code Segnalatore!\n\n` +
+        `═══════════════════════════════════════\n` +
+        `🏷️ CODICE SEGNALATORE: ${codeDisplay}\n` +
+        `🤝 NOME SEGNALATORE: ${segnalatore_name || 'Segnalatore Rossomandi'}\n` +
+        `═══════════════════════════════════════\n\n` +
+        `👤 DATI DEL CLIENTE:\n` +
+        `• Nome e Cognome: ${client_name}\n` +
+        `• Telefono: ${client_phone}\n` +
+        `• Email: ${client_email || 'Non specificata'}\n\n` +
+        `🚗 AUTO RICHIESTA / MESSAGGIO:\n` +
+        `${message || 'Richiesta contatto per preventivo auto.'}\n\n` +
+        `═══════════════════════════════════════\n` +
+        `Contattare il cliente per fissare un appuntamento in sede.`;
+
+      await transporter.sendMail({
+        from: '"Rossomandi Segnalatori QR" <preventivi@rossomandi.com>',
+        to: targetBdcEmail,
+        replyTo: client_email || undefined,
+        subject: mailSubject,
+        text: mailText
+      });
+    }
 
     res.json({
       success: true,
+      historyItem: historyInsert.rows[0],
       message: `Richiesta inviata con successo con Codice Segnalatore ${codeDisplay}!`
     });
   } catch (err) {
     console.error('Error sending QR preventivo email:', err.message);
     res.status(500).json({ error: 'Errore durante l\'invio della richiesta: ' + err.message });
+  }
+});
+
+// GET client referral history & 4-stage TrackingSegnalatori progress (25% -> 50% -> 75% -> 100%)
+app.get('/api/segnalatori/history/:code', async (req, res) => {
+  try {
+    await ensureSegnalatoriTable();
+    const cleanCode = String(req.params.code || '').trim().toUpperCase();
+    const numMatch = cleanCode.match(/\d+/);
+    const numCode = numMatch ? parseInt(numMatch[0], 10) : -1;
+
+    // 1. Fetch QR requests submitted by clients for this Segnalatore
+    const qrRes = await db.query(
+      'SELECT * FROM segnalatori_clienti_history WHERE UPPER(segnalatore_code) = $1 ORDER BY created_at DESC',
+      [cleanCode]
+    );
+
+    // 2. Fetch Access TrackingSegnalatori rows for this Segnalatore (matching numeric Segnalatore e.g. 9 for 9V or 20 for 20C)
+    const trackRes = await db.query(
+      'SELECT * FROM tracking_segnalatori_access WHERE segnalatore_num = $1 ORDER BY indice DESC',
+      [numCode]
+    );
+
+    // Build combined per-client progress list (every single client separately by name)
+    const clientsMap = new Map();
+
+    // First, add all official rows from Access TrackingSegnalatori
+    for (const row of trackRes.rows) {
+      const clientName = String(row.cliente || 'Cliente').trim();
+      const key = clientName.toLowerCase();
+      const hasPrev = Boolean(row.preventivo_data && String(row.preventivo_data).trim());
+      const hasFin = Boolean(row.approvazione_finanziamento && String(row.approvazione_finanziamento).trim());
+      const hasCons = Boolean(row.consegne && String(row.consegne).trim());
+
+      let progress = 25;
+      if (hasCons) progress = 100;
+      else if (hasFin) progress = 75;
+      else if (hasPrev) progress = 50;
+
+      clientsMap.set(key, {
+        id: `acc_${row.indice}`,
+        indice: row.indice,
+        client_name: clientName,
+        client_phone: '',
+        client_email: '',
+        message: '',
+        preventivo_data: row.preventivo_data || null,
+        approvazione_finanziamento: row.approvazione_finanziamento || null,
+        consegne: row.consegne || null,
+        tariffa_provv: row.tariffa_provv || 0,
+        progress,
+        source: 'access'
+      });
+    }
+
+    // Next, merge any QR scan requests (if client not yet in Access TrackingSegnalatori, they show at 25%)
+    for (const qRow of qrRes.rows) {
+      const clientName = String(qRow.client_name || 'Cliente').trim();
+      const key = clientName.toLowerCase();
+      if (clientsMap.has(key)) {
+        const existing = clientsMap.get(key);
+        existing.client_phone = existing.client_phone || qRow.client_phone;
+        existing.client_email = existing.client_email || qRow.client_email;
+        existing.message = existing.message || qRow.message;
+        existing.qr_date = qRow.created_at;
+      } else {
+        clientsMap.set(key, {
+          id: `qr_${qRow.id}`,
+          indice: null,
+          client_name: clientName,
+          client_phone: qRow.client_phone || '',
+          client_email: qRow.client_email || '',
+          message: qRow.message || '',
+          preventivo_data: null,
+          approvazione_finanziamento: null,
+          consegne: null,
+          tariffa_provv: 0,
+          progress: 25,
+          qr_date: qRow.created_at,
+          source: 'qr'
+        });
+      }
+    }
+
+    res.json({ history: Array.from(clientsMap.values()) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST sync TrackingSegnalatori from Access (isolated, called by sync.py)
+app.post('/api/sync/push-tracking-segnalatori', async (req, res) => {
+  try {
+    await ensureSegnalatoriTable();
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.json({ message: 'No tracking items to sync' });
+    }
+
+    for (const item of items) {
+      const indice = parseInt(item.indice, 10);
+      const segNum = parseInt(item.segnalatore, 10);
+      if (isNaN(indice) || isNaN(segNum)) continue;
+
+      await db.query(`
+        INSERT INTO tracking_segnalatori_access (
+          indice, segnalatore_num, cliente, preventivo_data, approvazione_finanziamento, consegne, tariffa_provv, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+        ON CONFLICT (indice) DO UPDATE SET
+          segnalatore_num = EXCLUDED.segnalatore_num,
+          cliente = EXCLUDED.cliente,
+          preventivo_data = EXCLUDED.preventivo_data,
+          approvazione_finanziamento = EXCLUDED.approvazione_finanziamento,
+          consegne = EXCLUDED.consegne,
+          tariffa_provv = EXCLUDED.tariffa_provv,
+          updated_at = CURRENT_TIMESTAMP
+      `, [
+        indice,
+        segNum,
+        String(item.cliente || '').trim(),
+        item.preventivo_data || null,
+        item.approvazione_finanziamento || null,
+        item.consegne || null,
+        parseFloat(item.tariffa_provv || 0) || 0
+      ]);
+    }
+
+    const activeIndices = items.map(i => parseInt(i.indice, 10)).filter(x => !isNaN(x));
+    if (activeIndices.length > 0) {
+      await db.query(`DELETE FROM tracking_segnalatori_access WHERE indice NOT IN (${activeIndices.join(',')})`);
+    }
+
+    res.json({ success: true, count: items.length });
+  } catch (err) {
+    console.error('Error syncing tracking_segnalatori:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Segnalatore Change Password (saves custom password and prevents sync overwrite)
+app.post('/api/segnalatori/change-password', authenticateToken, async (req, res) => {
+  try {
+    await ensureSegnalatoriTable();
+    const { newPassword } = req.body;
+    if (!newPassword || String(newPassword).trim().length < 4) {
+      return res.status(400).json({ error: 'La nuova password deve avere almeno 4 caratteri.' });
+    }
+    const cleanPass = String(newPassword).trim();
+    const salt = await bcrypt.genSalt(10);
+    const hashed = await bcrypt.hash(cleanPass, salt);
+
+    const userRes = await db.query('SELECT id, email, venditore_code FROM users WHERE id = $1', [req.user.id]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Utente non trovato.' });
+    }
+    const u = userRes.rows[0];
+    await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, u.id]);
+
+    // Mark custom_password_set = true in segnalatori_access so sync.py never resets it
+    await db.query(
+      'UPDATE segnalatori_access SET custom_password_set = true WHERE UPPER(full_code) = $1 OR LOWER(email) = $2',
+      [String(u.venditore_code || '').toUpperCase(), String(u.email || '').toLowerCase()]
+    );
+
+    res.json({ success: true, message: 'Password aggiornata con successo!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Segnalatore Forgot / Reset Password via Email
+app.post('/api/segnalatori/forgot-password', async (req, res) => {
+  try {
+    await ensureSegnalatoriTable();
+    const { emailOrCode } = req.body;
+    if (!emailOrCode || !String(emailOrCode).trim()) {
+      return res.status(400).json({ error: 'Inserisci la tua Email o il tuo Codice Segnalatore.' });
+    }
+    const inputClean = String(emailOrCode).trim().toLowerCase();
+
+    const segRes = await db.query(
+      'SELECT * FROM segnalatori_access WHERE LOWER(email) = $1 OR LOWER(full_code) = $1 LIMIT 1',
+      [inputClean]
+    );
+    if (segRes.rows.length === 0 || !segRes.rows[0].email) {
+      return res.status(404).json({
+        error: 'Nessun account Segnalatore con email valida trovato per questo riferimento. Contatta il BDC.'
+      });
+    }
+
+    const seg = segRes.rows[0];
+    const targetEmail = seg.email.toLowerCase().trim();
+    const fullCode = seg.full_code;
+
+    // Generate a fresh temporary password
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let tempPass = `${fullCode}-`;
+    for (let i = 0; i < 4; i++) {
+      tempPass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashed = await bcrypt.hash(tempPass, salt);
+
+    await db.query(
+      'UPDATE users SET password = $1 WHERE LOWER(email) = $2 OR UPPER(venditore_code) = $3',
+      [hashed, targetEmail, fullCode.toUpperCase()]
+    );
+    await db.query(
+      'UPDATE segnalatori_access SET custom_password_set = true WHERE codice = $1',
+      [seg.codice]
+    );
+
+    const transporter = getSmtpTransporter();
+    const appUrl = 'https://rossomandi-auto-srl.vercel.app/';
+    const mailBody = `Gentile ${seg.cognome_nome},\n\nHai richiesto il ripristino della password per il tuo account Segnalatore Rossomandi Auto (Codice: ${fullCode}).\n\nEcco la tua nuova password temporanea:\n🔑 Nuova Password: ${tempPass}\n📧 Email (Utente): ${targetEmail}\n🔗 Link Applicazione (Accedi o Installa): ${appUrl}\n\nDopo aver effettuato l'accesso, potrai cambiare la password in qualsiasi momento cliccando su "🔑 Password" nella tua area riservata.\n\nCordiali saluti,\nRossomandi Auto S.R.L.`;
+
+    await transporter.sendMail({
+      from: '"Rossomandi Auto" <preventivi@rossomandi.com>',
+      to: targetEmail,
+      subject: `Recupero Password Segnalatore Rossomandi Auto (${fullCode})`,
+      text: mailBody
+    });
+
+    res.json({
+      success: true,
+      message: `Abbiamo inviato una nuova password all'indirizzo email ${targetEmail}!`
+    });
+  } catch (err) {
+    console.error('Error resetting segnalatore password:', err.message);
+    res.status(500).json({ error: 'Errore durante l\'invio dell\'email di recupero: ' + err.message });
   }
 });
 

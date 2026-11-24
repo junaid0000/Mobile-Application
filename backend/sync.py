@@ -1396,6 +1396,96 @@ def push_segnalatori_to_server(items):
         except Exception:
             pass
 
+def fetch_tracking_segnalatori_data(db_path):
+    """Fetches rows from TrackingSegnalatori query/table in Access safely (isolated)."""
+    if not db_path or not os.path.exists(db_path):
+        return []
+    temp_path = os.path.abspath("temp_tracking_segnalatori.accdb")
+    conn_path = db_path
+    if copy_locked_file(db_path, temp_path):
+        conn_path = temp_path
+    conn = None
+    cursor = None
+    try:
+        conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={conn_path};"
+        conn = pyodbc.connect(conn_str, autocommit=True)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM [TrackingSegnalatori]")
+        col_names = [col[0].lower().strip() for col in cursor.description]
+        rows = cursor.fetchall()
+
+        col_map = {name: idx for idx, name in enumerate(col_names)}
+        def gval(row, keys):
+            for k in keys:
+                if k in col_map:
+                    return row[col_map[k]]
+            return None
+
+        def fmt_dt(v):
+            if v is None:
+                return None
+            if hasattr(v, 'strftime'):
+                return v.strftime('%d/%m/%Y')
+            s = str(v).strip()
+            return s if s else None
+
+        items = []
+        for r in rows:
+            idx_val = gval(r, ['indice'])
+            seg_val = gval(r, ['segnalatore'])
+            if idx_val is None or seg_val is None:
+                continue
+            try:
+                idx_int = int(idx_val)
+                seg_int = int(seg_val)
+            except Exception:
+                continue
+
+            items.append({
+                "indice": idx_int,
+                "segnalatore": seg_int,
+                "cliente": str(gval(r, ['cliente']) or '').strip(),
+                "preventivo_data": fmt_dt(gval(r, ['preventivodata'])),
+                "approvazione_finanziamento": fmt_dt(gval(r, ['approvazionefinanziamento'])),
+                "consegne": fmt_dt(gval(r, ['consegne'])),
+                "tariffa_provv": float(gval(r, ['tariffaprovv']) or 0.0)
+            })
+        return items
+    except Exception as e:
+        print(f"[TrackingSegnalatori Fetch Notice] {e}", flush=True)
+        return []
+    finally:
+        if cursor:
+            try: cursor.close()
+            except Exception: pass
+        if conn:
+            try: conn.close()
+            except Exception: pass
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except Exception: pass
+
+def push_tracking_segnalatori_to_server(items):
+    """Pushes TrackingSegnalatori rows to Vercel and local server (isolated)."""
+    if not items:
+        return
+    req_data = json.dumps({"items": items}).encode("utf-8")
+    for url in [
+        "https://rossomandi-auto-srl.vercel.app/api/sync/push-tracking-segnalatori",
+        "http://localhost:5000/api/sync/push-tracking-segnalatori"
+    ]:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers={"Content-Type": "application/json", "User-Agent": "RossomandiSyncService/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                if "vercel" in url:
+                    print(f"[TrackingSegnalatori Live Sync] Synced {len(items)} tracking records to Cloud! (HTTP {resp.status})", flush=True)
+        except Exception:
+            pass
+
 def background_asset_sync_loop():
     """Runs PDF and car image uploads continuously in a separate thread so the main car-data sync loop is NEVER blocked."""
     while True:
@@ -1428,6 +1518,7 @@ def main():
             db1_data = None
             portale_data = None
             segnalatori_data = None
+            tracking_seg_data = None
             for path in candidate_paths:
                 if os.path.exists(path):
                     is_server = "192.168.12.250" in path or path.startswith("Z:")
@@ -1443,7 +1534,11 @@ def main():
                         segnalatori_data = fetch_segnalatori_data(path)
                     except Exception as se:
                         print(f"[Segnalatori Safe Notice] {se}", flush=True)
-                    if data or stock_data or db1_data or portale_data or segnalatori_data:
+                    try:
+                        tracking_seg_data = fetch_tracking_segnalatori_data(path)
+                    except Exception as te:
+                        print(f"[TrackingSegnalatori Safe Notice] {te}", flush=True)
+                    if data or stock_data or db1_data or portale_data or segnalatori_data or tracking_seg_data:
                         break
                                 
             if portale_data:
@@ -1453,6 +1548,10 @@ def main():
             if segnalatori_data:
                 print(f"[Segnalatori] Read {len(segnalatori_data)} segnalatori from Access DB. Syncing...", flush=True)
                 push_segnalatori_to_server(segnalatori_data)
+
+            if tracking_seg_data:
+                print(f"[TrackingSegnalatori] Read {len(tracking_seg_data)} tracking records from Access DB. Syncing...", flush=True)
+                push_tracking_segnalatori_to_server(tracking_seg_data)
 
             if data:
                 print(f"[Sync] Read {len(data)} records from Access DB. Syncing to PostgreSQL...", flush=True)

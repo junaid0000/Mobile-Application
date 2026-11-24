@@ -13,6 +13,7 @@ import {
   ScrollView,
   Dimensions,
   Linking,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -26,6 +27,42 @@ export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Forgot Password Modal State for Segnalatori
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [forgotInput, setForgotInput] = useState('');
+  const [sendingReset, setSendingReset] = useState(false);
+
+  const showNotice = (title, msg) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.alert(`${title}\n\n${msg}`);
+    } else {
+      Alert.alert(title, msg);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!forgotInput.trim()) {
+      showNotice('Dato mancante', 'Inserisci la tua Email o il tuo Codice Segnalatore (es. 20C).');
+      return;
+    }
+    setSendingReset(true);
+    try {
+      const res = await axios.post(`${BASE_URL}/api/segnalatori/forgot-password`, {
+        emailOrCode: forgotInput.trim(),
+      });
+      setForgotModalVisible(false);
+      setForgotInput('');
+      showNotice('Email Inviata', res.data?.message || 'Controlla la tua email per la nuova password.');
+    } catch (err) {
+      showNotice(
+        'Attenzione',
+        err.response?.data?.error || 'Impossibile inviare il recupero password. Verifica email o codice.'
+      );
+    } finally {
+      setSendingReset(false);
+    }
+  };
 
   const API_URL = `${BASE_URL}/api/auth/login`;
 
@@ -144,6 +181,15 @@ export default function LoginScreen({ navigation }) {
               )}
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={{ alignItems: 'center', marginTop: 12 }}
+              onPress={() => setForgotModalVisible(true)}
+            >
+              <Text style={{ color: '#94A3B8', fontSize: 13, fontWeight: '600' }}>
+                Password dimenticata? <Text style={{ color: '#38BDF8', fontWeight: '800' }}>Recupera Password</Text>
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.linkButton} onPress={() => navigation.navigate('Signup')}>
               <Text style={styles.linkText}>
                 Don't have an account? <Text style={styles.linkHighlight}>Sign Up</Text>
@@ -160,6 +206,53 @@ export default function LoginScreen({ navigation }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Forgot Password Modal */}
+      <Modal visible={forgotModalVisible} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ width: '100%', maxWidth: 400, backgroundColor: '#141722', borderRadius: 18, padding: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: '#FFFFFF', marginBottom: 6 }}>
+              🔑 Recupera Password
+            </Text>
+            <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 16 }}>
+              Inserisci la tua Email o il tuo Codice Segnalatore (es. 20C). Riceverai subito via email una nuova password.
+            </Text>
+
+            <TextInput
+              style={[styles.input, { marginBottom: 16 }]}
+              placeholder="Email oppure Codice (es. 20C)"
+              placeholderTextColor="#64748B"
+              autoCapitalize="none"
+              value={forgotInput}
+              onChangeText={setForgotInput}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}
+                onPress={() => {
+                  setForgotModalVisible(false);
+                  setForgotInput('');
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>Annulla</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: '#FF4757', borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}
+                onPress={handleForgotPassword}
+                disabled={sendingReset}
+              >
+                {sendingReset ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>Invia Email</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

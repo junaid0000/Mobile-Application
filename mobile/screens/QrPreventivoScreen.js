@@ -10,13 +10,16 @@ import {
   Alert,
   Platform,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
 import { BASE_URL } from '../config/apiConfig';
 
 export default function QrPreventivoScreen({ navigation, route }) {
-  // Read code & name from route params or URL query string on web
+  const { width } = useWindowDimensions();
+  const isSmallPhone = width < 390;
+
   let initialCode = route?.params?.codice || '';
   let initialNome = route?.params?.nome || '';
 
@@ -32,7 +35,7 @@ export default function QrPreventivoScreen({ navigation, route }) {
   const [segnalatoreName, setSegnalatoreName] = useState(
     initialNome || 'Partner Rossomandi'
   );
-  const [clientName, setClientName] = useState('');
+  const [clientName, setClientName] = useState(''); // Cognome e Nome
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [message, setMessage] = useState('');
@@ -64,9 +67,9 @@ export default function QrPreventivoScreen({ navigation, route }) {
     }
   };
 
-  const handleSendRequest = async () => {
+  const handleSendEmailRequest = async () => {
     if (!clientName.trim() || !clientPhone.trim()) {
-      showNotice('Dati richiesti', 'Inserisci il tuo Nome e Cognome e il numero di Telefono.');
+      showNotice('Dati richiesti', 'Inserisci il tuo Cognome e Nome e il numero di Telefono.');
       return;
     }
 
@@ -79,6 +82,7 @@ export default function QrPreventivoScreen({ navigation, route }) {
         client_phone: clientPhone.trim(),
         client_email: clientEmail.trim(),
         message: message.trim(),
+        channel: 'email',
       });
 
       setSentSuccess(true);
@@ -99,7 +103,7 @@ export default function QrPreventivoScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.pageBg}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
+        <View style={[styles.card, isSmallPhone && { padding: 18 }]}>
           {/* Header */}
           <View style={styles.topBar}>
             <View style={styles.brandRow}>
@@ -125,7 +129,7 @@ export default function QrPreventivoScreen({ navigation, route }) {
 
           {/* Segnalatore Code Banner (Attached automatically from QR) */}
           <View style={styles.codeBanner}>
-            <View>
+            <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={styles.codeBannerLabel}>CODICE SEGNALATORE ASSOCIATO</Text>
               <Text style={styles.codeBannerPartner}>{segnalatoreName}</Text>
             </View>
@@ -143,7 +147,7 @@ export default function QrPreventivoScreen({ navigation, route }) {
                 {'\n'}Il nostro reparto BDC ti contatterà a breve per fissare il tuo appuntamento in sede.
               </Text>
               <TouchableOpacity
-                style={[styles.redSubmitBtn, { marginTop: 18 }]}
+                style={[styles.redSubmitBtn, { marginTop: 18, width: '100%' }]}
                 onPress={() => {
                   setSentSuccess(false);
                   setClientName('');
@@ -157,10 +161,10 @@ export default function QrPreventivoScreen({ navigation, route }) {
             </View>
           ) : (
             <View>
-              <Text style={styles.fieldLabel}>Nome e Cognome *</Text>
+              <Text style={styles.fieldLabel}>Cognome e Nome *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Inserisci il tuo nome e cognome"
+                placeholder="Inserisci il tuo cognome e nome"
                 placeholderTextColor="#9CA3AF"
                 value={clientName}
                 onChangeText={setClientName}
@@ -200,7 +204,7 @@ export default function QrPreventivoScreen({ navigation, route }) {
 
               <TouchableOpacity
                 style={styles.redSubmitBtn}
-                onPress={handleSendRequest}
+                onPress={handleSendEmailRequest}
                 disabled={sending}
                 activeOpacity={0.88}
               >
