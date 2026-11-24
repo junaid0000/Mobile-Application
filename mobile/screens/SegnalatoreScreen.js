@@ -213,10 +213,10 @@ export default function SegnalatoreScreen({ navigation, route }) {
     }
   }, [token, isAdminPreview, navigation]);
 
-  const fetchHistory = useCallback(async () => {
+  const fetchHistory = useCallback(async (isSilent = false) => {
     if (!personalCode) return;
     try {
-      setLoadingHistory(true);
+      if (!isSilent) setLoadingHistory(true);
       const res = await axios.get(
         `${BASE_URL}/api/segnalatori/history/${encodeURIComponent(personalCode)}`
       );
@@ -226,15 +226,15 @@ export default function SegnalatoreScreen({ navigation, route }) {
     } catch (err) {
       console.log('Notice fetching segnalatore history:', err.message);
     } finally {
-      setLoadingHistory(false);
+      if (!isSilent) setLoadingHistory(false);
     }
   }, [personalCode]);
 
   useEffect(() => {
     if (activeTab === 'history' || activeTab === 'qr') {
-      fetchHistory();
+      fetchHistory(false);
       const interval = setInterval(() => {
-        fetchHistory();
+        fetchHistory(true);
       }, 5000);
       return () => clearInterval(interval);
     }
