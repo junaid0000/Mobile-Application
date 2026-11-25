@@ -2418,7 +2418,9 @@ app.delete('/api/office/messages/:id', authenticateToken, isOfficeStaff, async (
 // Admin User Management Endpoints (Get, Create, Update, Delete Sellers)
 app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const result = await db.query('SELECT id, name, email, role, venditore_code, phone, address, created_at FROM users ORDER BY role ASC, name ASC');
+    const result = await db.query(
+      "SELECT id, name, email, role, venditore_code, phone, address, created_at FROM users WHERE role != 'segnalatore' ORDER BY role ASC, name ASC"
+    );
     res.json({ users: result.rows });
   } catch (err) {
     console.error('Error fetching users:', err.message);
