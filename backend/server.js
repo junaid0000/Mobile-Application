@@ -2734,6 +2734,33 @@ app.get('/api/segnalatori/list', authenticateToken, async (req, res) => {
   }
 });
 
+// GET logged-in Segnalatore profile directly by JWT token (works even after browser F5 reload!)
+app.get('/api/segnalatori/me', authenticateToken, async (req, res) => {
+  try {
+    await ensureSegnalatoriTable();
+    const userRes = await db.query('SELECT id, name, email, role, venditore_code FROM users WHERE id = $1', [req.user.id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ error: 'Utente non trovato' });
+    const u = userRes.rows[0];
+    const segRes = await db.query(
+      'SELECT * FROM segnalatori_access WHERE UPPER(full_code) = $1 OR LOWER(email) = $2 LIMIT 1',
+      [String(u.venditore_code || '').toUpperCase(), String(u.email || '').toLowerCase()]
+    );
+    const seg = segRes.rows[0];
+    res.json({
+      user: {
+        id: u.id,
+        name: seg?.cognome_nome || u.name,
+        email: seg?.email || u.email,
+        role: u.role,
+        venditore_code: seg?.full_code || u.venditore_code
+      },
+      segnalatore: seg || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET public info for a Segnalatore code when client scans QR code (e.g. 20C)
 app.get('/api/segnalatori/public/:code', async (req, res) => {
   try {

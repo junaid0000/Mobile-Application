@@ -174,6 +174,18 @@ export default function SegnalatoreScreen({ navigation, route }) {
   const isMobile = width < 768;
   const isSmallPhone = width < 390;
 
+  // Resolve real user object even after browser F5 refresh (when route.params.user becomes "[object Object]" string in URL)
+  const [resolvedUser, setResolvedUser] = useState(() => {
+    if (user && typeof user === 'object' && user.name) return user;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        const cached = window.sessionStorage.getItem('rossomandi_active_user');
+        if (cached) return JSON.parse(cached);
+      } catch (e) {}
+    }
+    return null;
+  });
+
   // Segnalatore starts on the First Page with the beautiful "Segnalatore" button,
   // or if Admin clicked a specific Segnalatore from AdminSegnalatoriScreen, opens QR view directly.
   // activeTab: 'home' (First page button) | 'qr' (Single QR Code Page) | 'history' (Client Progress Diagram Page)
@@ -189,14 +201,40 @@ export default function SegnalatoreScreen({ navigation, route }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPass, setSavingPass] = useState(false);
 
+  // Always fetch exact Segnalatore profile from backend using token so F5 refresh never shows wrong name/code!
+  useEffect(() => {
+    if (previewSegnalatore) return;
+    const activeToken =
+      token ||
+      (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage
+        ? window.sessionStorage.getItem('rossomandi_active_session')
+        : null);
+    if (!activeToken) return;
+    axios
+      .get(`${BASE_URL}/api/segnalatori/me`, {
+        headers: { Authorization: `Bearer ${activeToken}` },
+      })
+      .then((res) => {
+        if (res.data?.user) {
+          setResolvedUser(res.data.user);
+          if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+            window.sessionStorage.setItem('rossomandi_active_user', JSON.stringify(res.data.user));
+          }
+        }
+      })
+      .catch(() => {});
+  }, [token, previewSegnalatore]);
+
   const displayName =
     previewSegnalatore?.cognome_nome ||
-    user?.name ||
-    'Autoscuola Pistoiese';
+    resolvedUser?.name ||
+    (user && typeof user === 'object' ? user.name : null) ||
+    'Segnalatore';
   const personalCode =
     previewSegnalatore?.full_code ||
-    user?.venditore_code ||
-    '20C';
+    resolvedUser?.venditore_code ||
+    (user && typeof user === 'object' ? user.venditore_code : null) ||
+    '';
 
   // Session lock check on mount
   useEffect(() => {
@@ -266,9 +304,11 @@ export default function SegnalatoreScreen({ navigation, route }) {
     }
     try {
       await AsyncStorage.removeItem('@active_auth_session');
+      await AsyncStorage.removeItem('@active_auth_user');
     } catch (e) {}
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
       window.sessionStorage.removeItem('rossomandi_active_session');
+      window.sessionStorage.removeItem('rossomandi_active_user');
     }
     navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
   };

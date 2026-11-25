@@ -72,8 +72,10 @@ export default function LoginScreen({ navigation }) {
     useCallback(() => {
       if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
         window.sessionStorage.removeItem('rossomandi_active_session');
+        window.sessionStorage.removeItem('rossomandi_active_user');
       }
       AsyncStorage.removeItem('@active_auth_session').catch(() => {});
+      AsyncStorage.removeItem('@active_auth_user').catch(() => {});
     }, [])
   );
 
@@ -94,8 +96,10 @@ export default function LoginScreen({ navigation }) {
 
       if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
         window.sessionStorage.setItem('rossomandi_active_session', token);
+        window.sessionStorage.setItem('rossomandi_active_user', JSON.stringify(user));
       }
       await AsyncStorage.setItem('@active_auth_session', token).catch(() => {});
+      await AsyncStorage.setItem('@active_auth_user', JSON.stringify(user)).catch(() => {});
 
       if (user.role === 'admin') {
         navigation.reset({ index: 0, routes: [{ name: 'AdminDashboard', params: { user, token } }] });
