@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
   useWindowDimensions,
   StatusBar,
   ActivityIndicator,
-  Modal,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,161 +19,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../config/apiConfig';
 
-// Visual 4-Step Progress Diagram Component (25% -> 50% -> 75% -> 100%) for each individual client
-function ClientProgressDiagramCard({ item, isSmallPhone }) {
-  const progress = item.progress || 25;
-  const step1Done = progress >= 25;
-  const step2Done = progress >= 50;
-  const step3Done = progress >= 75;
-  const step4Done = progress >= 100;
-
-  const badgeBg =
-    progress === 100
-      ? '#DCFCE7'
-      : progress === 75
-      ? '#EDE9FE'
-      : progress === 50
-      ? '#DBEAFE'
-      : '#FEF3C7';
-
-  const badgeColor =
-    progress === 100
-      ? '#15803D'
-      : progress === 75
-      ? '#6D28D9'
-      : progress === 50
-      ? '#1D4ED8'
-      : '#B45309';
-
-  const barFillColor =
-    progress === 100
-      ? '#16A34A'
-      : progress === 75
-      ? '#7C3AED'
-      : progress === 50
-      ? '#2563EB'
-      : '#F59E0B';
-
-  const steps = [
-    {
-      pct: '25%',
-      label: 'Richiesta BDC',
-      sub: item.qr_date
-        ? new Date(item.qr_date).toLocaleDateString('it-IT')
-        : 'Inviata',
-      done: step1Done,
-      active: progress === 25,
-    },
-    {
-      pct: '50%',
-      label: 'Preventivo',
-      sub: item.preventivo_data || 'In attesa',
-      done: step2Done,
-      active: progress === 50,
-    },
-    {
-      pct: '75%',
-      label: 'Finanziamento',
-      sub: item.approvazione_finanziamento || 'In attesa',
-      done: step3Done,
-      active: progress === 75,
-    },
-    {
-      pct: '100%',
-      label: 'Consegna',
-      sub: item.consegne || 'In attesa',
-      done: step4Done,
-      active: progress === 100,
-    },
-  ];
-
-  return (
-    <View style={[styles.clientDiagramCard, isSmallPhone && { padding: 14 }]}>
-      {/* Top Row: Client Cognome e Nome + Overall Percentage Pill */}
-      <View style={styles.clientCardHeader}>
-        <View style={{ flex: 1, paddingRight: 8 }}>
-          <Text style={styles.clientLabelSmall}>CLIENTE SEGNALATO</Text>
-          <Text style={styles.clientFullName}>{item.client_name}</Text>
-          {item.client_phone || item.indice ? (
-            <Text style={styles.clientMetaSub}>
-              {item.indice ? `Pratica #${item.indice}` : ''}
-              {item.indice && item.client_phone ? ' • ' : ''}
-              {item.client_phone ? `📞 ${item.client_phone}` : ''}
-            </Text>
-          ) : null}
-        </View>
-
-        <View style={[styles.pctBadge, { backgroundColor: badgeBg }]}>
-          <Text style={[styles.pctBadgeText, { color: badgeColor }]}>
-            {progress}% {progress === 100 ? '✓ Completato' : 'In corso'}
-          </Text>
-        </View>
-      </View>
-
-      {/* Smooth Horizontal Progress Bar (25% -> 50% -> 75% -> 100%) */}
-      <View style={styles.progressBarTrack}>
-        <View
-          style={[
-            styles.progressBarFill,
-            { width: `${progress}%`, backgroundColor: barFillColor },
-          ]}
-        />
-      </View>
-
-      {/* 4-Stage Visual Diagram Nodes */}
-      <View style={styles.stepsDiagramRow}>
-        {steps.map((st, idx) => (
-          <View key={st.pct} style={styles.stepNodeCol}>
-            <View
-              style={[
-                styles.stepCircle,
-                st.done && { backgroundColor: barFillColor, borderColor: barFillColor },
-                st.active && styles.stepCircleActiveGlow,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.stepCircleText,
-                  st.done && { color: '#FFFFFF', fontWeight: '900' },
-                ]}
-              >
-                {st.done ? '✓' : idx + 1}
-              </Text>
-            </View>
-            <Text
-              style={[
-                styles.stepPctText,
-                st.done && { color: barFillColor, fontWeight: '900' },
-              ]}
-            >
-              {st.pct}
-            </Text>
-            <Text
-              style={[
-                styles.stepTitleText,
-                st.done && { color: '#111827', fontWeight: '800' },
-              ]}
-              numberOfLines={1}
-            >
-              {st.label}
-            </Text>
-            <Text style={styles.stepDateSub} numberOfLines={1}>
-              {st.sub}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
 export default function SegnalatoreScreen({ navigation, route }) {
   const { user, token, isAdminPreview, previewSegnalatore } = route.params || {};
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
   const isSmallPhone = width < 390;
+  const isCompactTable = width < 880;
 
-  // Resolve real user object even after browser F5 refresh (when route.params.user becomes "[object Object]" string in URL)
+  // Resolve real user object even after browser F5 refresh
   const [resolvedUser, setResolvedUser] = useState(() => {
     if (user && typeof user === 'object' && user.name) return user;
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
@@ -186,22 +38,15 @@ export default function SegnalatoreScreen({ navigation, route }) {
     return null;
   });
 
-  // Segnalatore starts on the First Page with the beautiful "Segnalatore" button,
-  // or if Admin clicked a specific Segnalatore from AdminSegnalatoriScreen, opens QR view directly.
-  // activeTab: 'home' (First page button) | 'qr' (Single QR Code Page) | 'history' (Client Progress Diagram Page)
+  // activeTab: 'home' (First page button) | 'qr' (Single QR Code Page) | 'history' (Excel-Style Client Progress Table)
   const [activeTab, setActiveTab] = useState(
     previewSegnalatore ? 'qr' : 'home'
   );
   const [historyList, setHistoryList] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [searchClient, setSearchClient] = useState('');
 
-  // Change Password Modal state
-  const [passModalVisible, setPassModalVisible] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [savingPass, setSavingPass] = useState(false);
-
-  // Always fetch exact Segnalatore profile from backend using token so F5 refresh never shows wrong name/code!
+  // Always fetch exact Segnalatore profile from backend using token
   useEffect(() => {
     if (previewSegnalatore) return;
     const activeToken =
@@ -278,6 +123,22 @@ export default function SegnalatoreScreen({ navigation, route }) {
     }
   }, [activeTab, fetchHistory]);
 
+  const filteredClients = useMemo(() => {
+    const q = searchClient.toLowerCase().trim();
+    if (!q) return historyList;
+    return historyList.filter(
+      (item) =>
+        String(item.client_name || '').toLowerCase().includes(q) ||
+        String(item.indice || '').toLowerCase().includes(q) ||
+        String(item.client_phone || '').toLowerCase().includes(q)
+    );
+  }, [historyList, searchClient]);
+
+  const completedCount = useMemo(
+    () => historyList.filter((x) => (x.progress || 25) === 100).length,
+    [historyList]
+  );
+
   // Short & clean QR / Form URL and App Install URL
   const qrFormUrl = `https://rossomandi-auto-srl.vercel.app/preventivo-qr?codice=${encodeURIComponent(
     personalCode
@@ -288,14 +149,6 @@ export default function SegnalatoreScreen({ navigation, route }) {
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=340x340&margin=12&data=${encodeURIComponent(
     qrFormUrl
   )}`;
-
-  const showNotice = (title, msg) => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.alert(`${title}\n\n${msg}`);
-    } else {
-      Alert.alert(title, msg);
-    }
-  };
 
   const handleLogout = async () => {
     if (isAdminPreview) {
@@ -329,37 +182,6 @@ export default function SegnalatoreScreen({ navigation, route }) {
       codice: personalCode,
       nome: displayName,
     });
-  };
-
-  const handleChangePassword = async () => {
-    if (!newPassword.trim() || newPassword.trim().length < 4) {
-      showNotice('Password troppo corta', 'Inserisci almeno 4 caratteri.');
-      return;
-    }
-    if (newPassword.trim() !== confirmPassword.trim()) {
-      showNotice('Errore', 'Le due password non coincidono.');
-      return;
-    }
-
-    setSavingPass(true);
-    try {
-      const res = await axios.post(
-        `${BASE_URL}/api/segnalatori/change-password`,
-        { newPassword: newPassword.trim() },
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-      );
-      setPassModalVisible(false);
-      setNewPassword('');
-      setConfirmPassword('');
-      showNotice('Successo', res.data?.message || 'Password modificata con successo!');
-    } catch (err) {
-      showNotice(
-        'Errore',
-        err.response?.data?.error || 'Impossibile aggiornare la password.'
-      );
-    } finally {
-      setSavingPass(false);
-    }
   };
 
   return (
@@ -403,230 +225,307 @@ export default function SegnalatoreScreen({ navigation, route }) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* ═══════════════════════════════════════════════════════════════════
-            VIEW 1: FIRST PAGE WHEN SEGNALATORE LOGS IN
-            Shows ONLY the beautiful "Segnalatore" 3D Button
-           ═══════════════════════════════════════════════════════════════════ */}
-        {activeTab === 'home' && (
-          <View style={styles.firstPageCenter}>
-            <View style={styles.bannerContainer}>
-              <Image
-                source={require('../assets/images/banner.png')}
-                style={styles.bannerImage}
-                resizeMode="contain"
-              />
+      {/* ═══════════════════════════════════════════════════════════════════
+          VIEW 3: EXCEL-STYLE PROFESSIONAL CLIENT PROGRESS TABLE
+          (Compact, sleek table matching AdminSegnalatoriScreen)
+         ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'history' ? (
+        <View style={{ flex: 1 }}>
+          {/* Sub-Header Toolbar with KPI Pills & Search */}
+          <View style={styles.excelTopBar}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.excelTitle}>
+                📊 Avanzamento Clienti • {displayName}{' '}
+                <Text style={{ color: '#F87171' }}>({personalCode})</Text>
+              </Text>
+              <Text style={styles.excelSub}>
+                25% Richiesta BDC → 50% Preventivo → 75% Finanziamento → 100% Consegna
+              </Text>
             </View>
 
-            <Text style={styles.welcomeTitle}>Benvenuto, {displayName}!</Text>
-            <Text style={styles.welcomeSubtitle}>
-              Area Riservata Segnalatore • Codice{' '}
-              <Text style={{ fontWeight: '900', color: '#FF4757' }}>{personalCode}</Text>
-            </Text>
-
-            <View style={[styles.buttonStack, { maxWidth: isMobile ? '88%' : 340, width: '100%' }]}>
+            <View style={styles.excelKpiGroup}>
+              <View style={styles.kpiPill}>
+                <Text style={styles.kpiLabel}>CLIENTI</Text>
+                <Text style={styles.kpiValue}>{historyList.length}</Text>
+              </View>
+              <View style={[styles.kpiPill, styles.kpiPillGreen]}>
+                <Text style={[styles.kpiLabel, { color: '#34D399' }]}>CONSEGNATI (100%)</Text>
+                <Text style={[styles.kpiValue, { color: '#34D399' }]}>{completedCount}</Text>
+              </View>
               <TouchableOpacity
-                style={styles.segnalatore3DButton}
-                activeOpacity={0.85}
-                onPress={() => setActiveTab('qr')}
+                style={styles.excelRefreshBtn}
+                onPress={() => fetchHistory(false)}
               >
-                <View style={styles.segnalatoreButtonInner}>
-                  <Text style={styles.segnalatoreButtonEmoji}>📣</Text>
-                  <Text style={styles.segnalatoreButtonText}>Segnalatore</Text>
+                <Text style={styles.excelRefreshBtnText}>↻ Aggiorna</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Compact Search Bar */}
+          <View style={styles.excelSearchSection}>
+            <View style={styles.excelSearchBox}>
+              <Text style={{ fontSize: 13, marginRight: 8 }}>🔍</Text>
+              <TextInput
+                style={styles.excelSearchInput}
+                placeholder="Cerca cliente per Cognome Nome o N° Pratica..."
+                placeholderTextColor="#64748B"
+                value={searchClient}
+                onChangeText={setSearchClient}
+              />
+              {searchClient.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchClient('')}>
+                  <Text style={{ color: '#94A3B8', fontSize: 13, paddingHorizontal: 6 }}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Excel Data Grid */}
+          <View style={styles.tableOuterPad}>
+            <View style={styles.tableCard}>
+              <ScrollView
+                horizontal={isCompactTable}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ flexGrow: 1 }}
+              >
+                <View style={{ flex: 1, minWidth: isCompactTable ? 880 : '100%' }}>
+                  {/* Table Header Row */}
+                  <View style={styles.tableHeaderRow}>
+                    <Text style={[styles.thText, styles.colPratica]}>PRATICA</Text>
+                    <Text style={[styles.thText, styles.colCliente]}>COGNOME E NOME CLIENTE</Text>
+                    <Text style={[styles.thText, styles.colStep]}>25% RICHIESTA BDC</Text>
+                    <Text style={[styles.thText, styles.colStep]}>50% PREVENTIVO</Text>
+                    <Text style={[styles.thText, styles.colStep]}>75% FINANZIAMENTO</Text>
+                    <Text style={[styles.thText, styles.colStep]}>100% CONSEGNA</Text>
+                    <Text style={[styles.thText, styles.colProgress]}>AVANZAMENTO</Text>
+                  </View>
+
+                  {loadingHistory ? (
+                    <View style={styles.emptyTableBox}>
+                      <ActivityIndicator size="large" color="#38BDF8" />
+                    </View>
+                  ) : filteredClients.length === 0 ? (
+                    <View style={styles.emptyTableBox}>
+                      <Text style={styles.emptyTableText}>
+                        Nessun cliente collegato al codice {personalCode}.
+                      </Text>
+                    </View>
+                  ) : (
+                    <ScrollView style={{ flex: 1 }}>
+                      {filteredClients.map((item, idx) => {
+                        const isEven = idx % 2 === 0;
+                        const progress = item.progress || 25;
+                        const s1 = progress >= 25;
+                        const s2 = progress >= 50;
+                        const s3 = progress >= 75;
+                        const s4 = progress >= 100;
+
+                        const barColor =
+                          progress === 100
+                            ? '#10B981'
+                            : progress === 75
+                            ? '#8B5CF6'
+                            : progress === 50
+                            ? '#3B82F6'
+                            : '#F59E0B';
+
+                        const bdcDate = item.qr_date
+                          ? new Date(item.qr_date).toLocaleDateString('it-IT')
+                          : 'Registrata';
+
+                        return (
+                          <View
+                            key={item.id}
+                            style={[
+                              styles.tableRow,
+                              isEven ? styles.tableRowEven : styles.tableRowOdd,
+                            ]}
+                          >
+                            {/* 1. PRATICA / INDICE */}
+                            <View style={[styles.tdCell, styles.colPratica]}>
+                              <View style={styles.praticaChip}>
+                                <Text style={styles.praticaChipText}>
+                                  {item.indice ? `#${item.indice}` : 'QR'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* 2. COGNOME E NOME CLIENTE */}
+                            <View style={[styles.tdCell, styles.colCliente]}>
+                              <Text style={styles.clientNameCell} numberOfLines={1}>
+                                {item.client_name}
+                              </Text>
+                              {item.client_phone ? (
+                                <Text style={styles.clientPhoneSub} numberOfLines={1}>
+                                  📞 {item.client_phone}
+                                </Text>
+                              ) : null}
+                            </View>
+
+                            {/* 3. 25% RICHIESTA BDC */}
+                            <View style={[styles.tdCell, styles.colStep]}>
+                              <View style={[styles.stepPill, s1 ? styles.stepPillDoneGreen : styles.stepPillPending]}>
+                                <Text style={[styles.stepPillText, s1 ? { color: '#34D399' } : { color: '#64748B' }]}>
+                                  {s1 ? `✓ ${bdcDate}` : '—'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* 4. 50% PREVENTIVO */}
+                            <View style={[styles.tdCell, styles.colStep]}>
+                              <View style={[styles.stepPill, s2 ? styles.stepPillDoneBlue : styles.stepPillPending]}>
+                                <Text style={[styles.stepPillText, s2 ? { color: '#60A5FA' } : { color: '#64748B' }]}>
+                                  {item.preventivo_data ? `✓ ${item.preventivo_data}` : s2 ? '✓ Completato' : 'In attesa'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* 5. 75% FINANZIAMENTO */}
+                            <View style={[styles.tdCell, styles.colStep]}>
+                              <View style={[styles.stepPill, s3 ? styles.stepPillDonePurple : styles.stepPillPending]}>
+                                <Text style={[styles.stepPillText, s3 ? { color: '#C084FC' } : { color: '#64748B' }]}>
+                                  {item.approvazione_finanziamento
+                                    ? `✓ ${item.approvazione_finanziamento}`
+                                    : s3
+                                    ? '✓ Approvato'
+                                    : 'In attesa'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* 6. 100% CONSEGNA */}
+                            <View style={[styles.tdCell, styles.colStep]}>
+                              <View style={[styles.stepPill, s4 ? styles.stepPillDoneEmerald : styles.stepPillPending]}>
+                                <Text style={[styles.stepPillText, s4 ? { color: '#34D399' } : { color: '#64748B' }]}>
+                                  {item.consegne ? `🏆 ${item.consegne}` : 'In attesa'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* 7. AVANZAMENTO (Compact Progress Bar + %) */}
+                            <View style={[styles.tdCell, styles.colProgress]}>
+                              <View style={styles.inlineProgressRow}>
+                                <View style={styles.miniBarTrack}>
+                                  <View
+                                    style={[
+                                      styles.miniBarFill,
+                                      { width: `${progress}%`, backgroundColor: barColor },
+                                    ]}
+                                  />
+                                </View>
+                                <Text style={[styles.inlinePctText, { color: barColor }]}>
+                                  {progress}%
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
                 </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            VIEW 2: SINGLE CLEAN QR CODE PAGE
-            + New Button at the Bottom to Open Client History Progress Diagram
-           ═══════════════════════════════════════════════════════════════════ */}
-        {activeTab === 'qr' && (
-          <View style={[styles.qrCard, isSmallPhone && { padding: 20 }]}>
-            <Text style={styles.areaTag}>AREA RISERVATA SEGNALATORE</Text>
-
-            {/* Nome Segnalatore */}
-            <Text style={styles.segnalatoreName}>{displayName}</Text>
-
-            {/* Il mio codice personale (BOLD as requested) */}
-            <Text style={styles.boldCodeLabel}>Il mio codice personale</Text>
-            <View style={styles.codeBadgeBox}>
-              <Text style={styles.codeBadgeValue}>{personalCode}</Text>
-            </View>
-
-            {/* Scannable QR Code Box */}
-            <View style={styles.qrFrame}>
-              <Image
-                source={{ uri: qrImageUrl }}
-                style={[
-                  styles.qrImage,
-                  isSmallPhone && { width: 195, height: 195 },
-                ]}
-                resizeMode="contain"
-              />
-              <Text style={styles.qrHintText}>
-                Fai scansionare questo QR Code al cliente con la fotocamera del telefono per richiedere un preventivo con il codice{' '}
-                <Text style={{ fontWeight: '900', color: '#111827' }}>{personalCode}</Text>
-              </Text>
-            </View>
-
-            {/* Button 1: Richiedi un preventivo per me */}
-            <TouchableOpacity
-              style={styles.redPrimaryBtn}
-              onPress={handleOpenClientFormPreview}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.redPrimaryBtnText}>
-                📋 Richiedi un preventivo per me ({personalCode})
-              </Text>
-            </TouchableOpacity>
-
-            {/* Button 2: Condividi su WhatsApp (Short Message with App Link) */}
-            <TouchableOpacity
-              style={styles.whatsappBtn}
-              onPress={handleShareWhatsApp}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.whatsappBtnText}>
-                📲 Condividi su WhatsApp
-              </Text>
-            </TouchableOpacity>
-
-            {/* Button 3 (NEW AT THE END): Open Client History & 25%-100% Progress Diagram */}
-            <TouchableOpacity
-              style={styles.historyDiagramBtn}
-              onPress={() => setActiveTab('history')}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.historyDiagramBtnText}>
-                📊 Storico e Avanzamento Clienti ({historyList.length})
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            VIEW 3: CLIENT HISTORY & 4-STAGE PROGRESS DIAGRAM (25% -> 50% -> 75% -> 100%)
-            Synced from TrackingSegnalatori in Access + QR referrals
-           ═══════════════════════════════════════════════════════════════════ */}
-        {activeTab === 'history' && (
-          <View style={[styles.historyPageCard, isSmallPhone && { padding: 18 }]}>
-            <View style={styles.historyTopBar}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={styles.areaTag}>TRACKING SEGNALATORI</Text>
-                <Text style={styles.historyPageTitle}>
-                  Avanzamento Clienti • {displayName} ({personalCode})
-                </Text>
-              </View>
-
-              <TouchableOpacity style={styles.refreshHistBtn} onPress={fetchHistory}>
-                <Text style={styles.refreshHistBtnText}>↻ Aggiorna</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Legend Pill Bar explaining 25% -> 50% -> 75% -> 100% */}
-            <View style={styles.legendBar}>
-              <Text style={styles.legendItem}>🟢 <Text style={{ fontWeight: '800' }}>25%</Text> Richiesta BDC</Text>
-              <Text style={styles.legendItem}>🔵 <Text style={{ fontWeight: '800' }}>50%</Text> Preventivo</Text>
-              <Text style={styles.legendItem}>🟣 <Text style={{ fontWeight: '800' }}>75%</Text> Finanziamento</Text>
-              <Text style={styles.legendItem}>🏆 <Text style={{ fontWeight: '800' }}>100%</Text> Consegna</Text>
-            </View>
-
-            {loadingHistory ? (
-              <View style={styles.emptyHistoryBox}>
-                <ActivityIndicator size="large" color="#DC002E" />
-              </View>
-            ) : historyList.length === 0 ? (
-              <View style={styles.emptyHistoryBox}>
-                <Text style={styles.emptyHistoryEmoji}>📊</Text>
-                <Text style={styles.emptyHistoryTitle}>
-                  Nessun cliente collegato al codice {personalCode}
-                </Text>
-                <Text style={styles.emptyHistoryDesc}>
-                  Non appena un cliente scansiona il tuo QR Code o viene inserito in TrackingSegnalatori, vedrai qui il diagramma di avanzamento (25% → 50% → 75% → 100%).
-                </Text>
-              </View>
-            ) : (
-              <View style={{ width: '100%' }}>
-                {historyList.map((item) => (
-                  <ClientProgressDiagramCard
-                    key={item.id}
-                    item={item}
-                    isSmallPhone={isSmallPhone}
-                  />
-                ))}
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.whatsappBtn, { marginTop: 14 }]}
-              onPress={() => setActiveTab('qr')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.whatsappBtnText}>← Torna al mio QR Code ({personalCode})</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Change Password Modal for Segnalatore */}
-      <Modal visible={passModalVisible} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>🔑 Modifica la tua Password</Text>
-            <Text style={styles.modalSub}>
-              Scegli una nuova password personale per accedere al tuo account Segnalatore ({personalCode}).
-            </Text>
-
-            <Text style={styles.modalLabel}>Nuova Password</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Inserisci nuova password"
-              placeholderTextColor="#9CA3AF"
-              secureTextEntry
-              value={newPassword}
-              onChangeText={setNewPassword}
-            />
-
-            <Text style={styles.modalLabel}>Conferma Nuova Password</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Ripeti nuova password"
-              placeholderTextColor="#9CA3AF"
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => {
-                  setPassModalVisible(false);
-                  setNewPassword('');
-                  setConfirmPassword('');
-                }}
-              >
-                <Text style={styles.modalCancelBtnText}>Annulla</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalSaveBtn}
-                onPress={handleChangePassword}
-                disabled={savingPass}
-              >
-                {savingPass ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalSaveBtnText}>Salva Password</Text>
-                )}
-              </TouchableOpacity>
+              </ScrollView>
             </View>
           </View>
         </View>
-      </Modal>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* ═══════════════════════════════════════════════════════════════════
+              VIEW 1: FIRST PAGE WHEN SEGNALATORE LOGS IN
+             ═══════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'home' && (
+            <View style={styles.firstPageCenter}>
+              <View style={styles.bannerContainer}>
+                <Image
+                  source={require('../assets/images/banner.png')}
+                  style={styles.bannerImage}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <Text style={styles.welcomeTitle}>Benvenuto, {displayName}!</Text>
+              <Text style={styles.welcomeSubtitle}>
+                Area Riservata Segnalatore • Codice{' '}
+                <Text style={{ fontWeight: '900', color: '#FF4757' }}>{personalCode}</Text>
+              </Text>
+
+              <View style={[styles.buttonStack, { maxWidth: isMobile ? '88%' : 340, width: '100%' }]}>
+                <TouchableOpacity
+                  style={styles.segnalatore3DButton}
+                  activeOpacity={0.85}
+                  onPress={() => setActiveTab('qr')}
+                >
+                  <View style={styles.segnalatoreButtonInner}>
+                    <Text style={styles.segnalatoreButtonEmoji}>📣</Text>
+                    <Text style={styles.segnalatoreButtonText}>Segnalatore</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              VIEW 2: SINGLE CLEAN QR CODE PAGE
+             ═══════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'qr' && (
+            <View style={[styles.qrCard, isSmallPhone && { padding: 20 }]}>
+              <Text style={styles.areaTag}>AREA RISERVATA SEGNALATORE</Text>
+
+              <Text style={styles.segnalatoreName}>{displayName}</Text>
+
+              <Text style={styles.boldCodeLabel}>Il mio codice personale</Text>
+              <View style={styles.codeBadgeBox}>
+                <Text style={styles.codeBadgeValue}>{personalCode}</Text>
+              </View>
+
+              <View style={styles.qrFrame}>
+                <Image
+                  source={{ uri: qrImageUrl }}
+                  style={[
+                    styles.qrImage,
+                    isSmallPhone && { width: 195, height: 195 },
+                  ]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.qrHintText}>
+                  Fai scansionare questo QR Code al cliente con la fotocamera del telefono per richiedere un preventivo con il codice{' '}
+                  <Text style={{ fontWeight: '900', color: '#111827' }}>{personalCode}</Text>
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.redPrimaryBtn}
+                onPress={handleOpenClientFormPreview}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.redPrimaryBtnText}>
+                  📋 Richiedi un preventivo per me ({personalCode})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.whatsappBtn}
+                onPress={handleShareWhatsApp}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.whatsappBtnText}>
+                  📲 Condividi su WhatsApp
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.historyDiagramBtn}
+                onPress={() => setActiveTab('history')}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.historyDiagramBtnText}>
+                  📊 Storico e Avanzamento Clienti ({historyList.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -634,17 +533,18 @@ export default function SegnalatoreScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0E',
+    backgroundColor: '#0B0F19',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     flexWrap: 'wrap',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 12,
+    backgroundColor: '#111827',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: '#1E293B',
     gap: 8,
   },
   headerLeft: {
@@ -669,34 +569,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   backBtn: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 11,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8,
   },
   backBtnText: {
-    color: '#FFFFFF',
+    color: '#E2E8F0',
     fontSize: 12,
     fontWeight: '700',
-  },
-  passBtn: {
-    backgroundColor: 'rgba(56,189,248,0.15)',
-    borderWidth: 1,
-    borderColor: '#38BDF8',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  passBtnText: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '800',
   },
   logoutBtn: {
     backgroundColor: 'rgba(255,71,87,0.18)',
     borderWidth: 1,
     borderColor: '#FF4757',
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8,
   },
@@ -780,18 +669,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 26,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 18,
-    elevation: 8,
-  },
-  historyPageCard: {
-    width: '100%',
-    maxWidth: 760,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
@@ -897,245 +774,230 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
-  historyTopBar: {
+
+  // ── Excel-Style Table Styles for Avanzamento Clienti ──
+  excelTopBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-  },
-  historyPageTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  refreshHistBtn: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  refreshHistBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#374151',
-  },
-  legendBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 16,
-    gap: 12,
-    justifyContent: 'space-between',
-  },
-  legendItem: {
-    fontSize: 11,
-    color: '#334155',
-  },
-  emptyHistoryBox: {
-    minHeight: 220,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyHistoryEmoji: {
-    fontSize: 38,
-    marginBottom: 10,
-  },
-  emptyHistoryTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  emptyHistoryDesc: {
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  clientDiagramCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  clientCardHeader: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#0F172A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    gap: 12,
   },
-  clientLabelSmall: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#6B7280',
-    letterSpacing: 0.8,
-  },
-  clientFullName: {
+  excelTitle: {
     fontSize: 17,
-    fontWeight: '900',
-    color: '#111827',
-    marginTop: 2,
+    fontWeight: '800',
+    color: '#F8FAFC',
   },
-  clientMetaSub: {
+  excelSub: {
     fontSize: 11,
-    color: '#6B7280',
+    color: '#94A3B8',
     marginTop: 2,
   },
-  pctBadge: {
+  excelKpiGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  kpiPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 8,
+    gap: 6,
   },
-  pctBadgeText: {
-    fontSize: 12,
-    fontWeight: '900',
+  kpiPillGreen: {
+    backgroundColor: 'rgba(16,185,129,0.1)',
+    borderColor: 'rgba(16,185,129,0.3)',
   },
-  progressBarTrack: {
-    width: '100%',
-    height: 10,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 6,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 6,
-  },
-  stepsDiagramRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  stepNodeCol: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 2,
-  },
-  stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#F9FAFB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  stepCircleActiveGlow: {
-    transform: [{ scale: 1.08 }],
-  },
-  stepCircleText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
-  stepPctText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#6B7280',
-  },
-  stepTitleText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#4B5563',
-    textAlign: 'center',
-    marginTop: 1,
-  },
-  stepDateSub: {
+  kpiLabel: {
     fontSize: 10,
-    color: '#9CA3AF',
-    textAlign: 'center',
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  kpiValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#F8FAFC',
+  },
+  excelRefreshBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  excelRefreshBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  excelSearchSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#0B0F19',
+  },
+  excelSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 36,
+  },
+  excelSearchInput: {
+    flex: 1,
+    color: '#F8FAFC',
+    fontSize: 12.5,
+    paddingVertical: 0,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
+  },
+  tableOuterPad: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+  },
+  tableCard: {
+    flex: 1,
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    overflow: 'hidden',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#334155',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  thText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+  },
+  tableRowEven: {
+    backgroundColor: '#111827',
+  },
+  tableRowOdd: {
+    backgroundColor: '#151E2E',
+  },
+  tdCell: {
+    justifyContent: 'center',
+    paddingRight: 8,
+  },
+  // Proportional Excel Columns
+  colPratica: { width: 86 },
+  colCliente: { flex: 1.4, minWidth: 175 },
+  colStep: { flex: 1, minWidth: 125 },
+  colProgress: { width: 155, paddingRight: 0 },
+
+  praticaChip: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  praticaChipText: {
+    color: '#CBD5E1',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  clientNameCell: {
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  clientPhoneSub: {
+    color: '#94A3B8',
+    fontSize: 11,
     marginTop: 1,
   },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 18,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 22,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#111827',
-    marginBottom: 6,
-  },
-  modalSub: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 16,
-  },
-  modalLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 6,
-  },
-  modalInput: {
-    backgroundColor: '#F9FAFB',
+  stepPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
-    color: '#111827',
-    marginBottom: 14,
   },
-  modalBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
+  stepPillPending: {
+    backgroundColor: 'rgba(100,116,139,0.08)',
+    borderColor: 'rgba(100,116,139,0.2)',
   },
-  modalCancelBtn: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
+  stepPillDoneGreen: {
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    borderColor: 'rgba(16,185,129,0.35)',
   },
-  modalCancelBtnText: {
-    color: '#374151',
-    fontSize: 13,
+  stepPillDoneBlue: {
+    backgroundColor: 'rgba(59,130,246,0.14)',
+    borderColor: 'rgba(59,130,246,0.38)',
+  },
+  stepPillDonePurple: {
+    backgroundColor: 'rgba(139,92,246,0.14)',
+    borderColor: 'rgba(139,92,246,0.38)',
+  },
+  stepPillDoneEmerald: {
+    backgroundColor: 'rgba(16,185,129,0.18)',
+    borderColor: 'rgba(16,185,129,0.5)',
+  },
+  stepPillText: {
+    fontSize: 11,
     fontWeight: '700',
   },
-  modalSaveBtn: {
-    flex: 1,
-    backgroundColor: '#DC002E',
-    borderRadius: 10,
-    paddingVertical: 12,
+  inlineProgressRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  modalSaveBtnText: {
-    color: '#FFFFFF',
+  miniBarTrack: {
+    flex: 1,
+    height: 7,
+    backgroundColor: '#1E293B',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  miniBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  inlinePctText: {
+    fontSize: 12,
+    fontWeight: '900',
+    width: 38,
+    textAlign: 'right',
+  },
+  emptyTableBox: {
+    paddingVertical: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTableText: {
+    color: '#64748B',
     fontSize: 13,
-    fontWeight: '800',
   },
 });
