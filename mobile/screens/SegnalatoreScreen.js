@@ -70,7 +70,7 @@ function CompactClientDiagramRow({ item, idx }) {
     },
     {
       pct: '75%',
-      label: 'Finanziamento',
+      label: 'Contratto',
       sub: item.approvazione_finanziamento || 'In attesa',
       done: step3Done,
     },
@@ -504,7 +504,7 @@ export default function SegnalatoreScreen({ navigation, route }) {
                   🔵 <Text style={{ fontWeight: '800' }}>50%</Text> Preventivo
                 </Text>
                 <Text style={styles.legendItem}>
-                  🟣 <Text style={{ fontWeight: '800' }}>75%</Text> Finanziamento
+                  🟣 <Text style={{ fontWeight: '800' }}>75%</Text> Contratto
                 </Text>
                 <Text style={styles.legendItem}>
                   🏆 <Text style={{ fontWeight: '800' }}>100%</Text> Consegna
