@@ -2249,7 +2249,7 @@ app.get('/api/office/users', authenticateToken, isOfficeStaff, async (req, res) 
     const currentUserId = req.user.id;
     const result = await db.query(
       `SELECT id, name, email, role, venditore_code FROM users 
-       WHERE role IN ('admin', 'seller') 
+       WHERE role IN ('admin', 'seller', 'staff') 
          AND id != $1 
          AND email NOT ILIKE '%demo%' 
          AND name NOT ILIKE '%demo%'
