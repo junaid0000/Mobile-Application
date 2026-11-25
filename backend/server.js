@@ -3015,7 +3015,7 @@ app.post('/api/segnalatori/change-password', authenticateToken, async (req, res)
   }
 });
 
-// POST Segnalatore Forgot / Reset Password via Email
+// POST Forgot / Reset Password via Email (Works for ALL Users + Segnalatori by Email or Segnalatore Code)
 app.post('/api/segnalatori/forgot-password', async (req, res) => {
   try {
     await ensureSegnalatoriTable();
@@ -3025,47 +3025,83 @@ app.post('/api/segnalatori/forgot-password', async (req, res) => {
     }
     const inputClean = String(emailOrCode).trim().toLowerCase();
 
+    // 1. Check if it matches a Segnalatore in segnalatori_access (by Email or Code like 33P)
     const segRes = await db.query(
       'SELECT * FROM segnalatori_access WHERE LOWER(email) = $1 OR LOWER(full_code) = $1 LIMIT 1',
       [inputClean]
     );
-    if (segRes.rows.length === 0 || !segRes.rows[0].email) {
-      return res.status(404).json({
-        error: 'Nessun account Segnalatore con email valida trovato per questo riferimento. Contatta il BDC.'
+
+    if (segRes.rows.length > 0 && segRes.rows[0].email) {
+      const seg = segRes.rows[0];
+      const targetEmail = seg.email.toLowerCase().trim();
+      const fullCode = seg.full_code;
+
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let tempPass = `${fullCode}-`;
+      for (let i = 0; i < 4; i++) {
+        tempPass += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const hashed = await bcrypt.hash(tempPass, salt);
+
+      await db.query(
+        'UPDATE users SET password = $1 WHERE LOWER(email) = $2 OR UPPER(venditore_code) = $3',
+        [hashed, targetEmail, fullCode.toUpperCase()]
+      );
+      await db.query(
+        'UPDATE segnalatori_access SET custom_password_set = true WHERE codice = $1',
+        [seg.codice]
+      );
+
+      const transporter = getSmtpTransporter();
+      const appUrl = 'https://rossomandi-auto-srl.vercel.app/';
+      const mailBody = `Gentile ${seg.cognome_nome},\n\nHai richiesto il ripristino della password per il tuo account Segnalatore Rossomandi Auto (Codice: ${fullCode}).\n\nEcco la tua nuova password per accedere:\n🔑 Nuova Password: ${tempPass}\n📧 Email (Utente): ${targetEmail}\n🔗 Link Applicazione (Accedi o Installa): ${appUrl}\n\nCordiali saluti,\nRossomandi Auto S.R.L.`;
+
+      await transporter.sendMail({
+        from: '"Rossomandi Auto" <preventivi@rossomandi.com>',
+        to: targetEmail,
+        subject: `Recupero Password Rossomandi Auto (${fullCode})`,
+        text: mailBody
+      });
+
+      return res.json({
+        success: true,
+        message: `Abbiamo inviato una nuova password all'indirizzo email ${targetEmail}!`
       });
     }
 
-    const seg = segRes.rows[0];
-    const targetEmail = seg.email.toLowerCase().trim();
-    const fullCode = seg.full_code;
+    // 2. Otherwise check general users table (Sellers, Staff, Collaboratori Esterni, Admin)
+    const userRes = await db.query(
+      'SELECT * FROM users WHERE LOWER(email) = $1 LIMIT 1',
+      [inputClean]
+    );
+    if (userRes.rows.length === 0 || !userRes.rows[0].email || userRes.rows[0].email.endsWith('@segnalatore.rossomandi.com')) {
+      return res.status(404).json({
+        error: 'Nessun account con email valida trovato per questo riferimento.'
+      });
+    }
 
-    // Generate a fresh temporary password
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let tempPass = `${fullCode}-`;
-    for (let i = 0; i < 4; i++) {
+    const u = userRes.rows[0];
+    const targetEmail = u.email.toLowerCase().trim();
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let tempPass = 'Rossomandi-';
+    for (let i = 0; i < 5; i++) {
       tempPass += chars.charAt(Math.floor(Math.random() * chars.length));
     }
 
     const salt = await bcrypt.genSalt(10);
     const hashed = await bcrypt.hash(tempPass, salt);
-
-    await db.query(
-      'UPDATE users SET password = $1 WHERE LOWER(email) = $2 OR UPPER(venditore_code) = $3',
-      [hashed, targetEmail, fullCode.toUpperCase()]
-    );
-    await db.query(
-      'UPDATE segnalatori_access SET custom_password_set = true WHERE codice = $1',
-      [seg.codice]
-    );
+    await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, u.id]);
 
     const transporter = getSmtpTransporter();
     const appUrl = 'https://rossomandi-auto-srl.vercel.app/';
-    const mailBody = `Gentile ${seg.cognome_nome},\n\nHai richiesto il ripristino della password per il tuo account Segnalatore Rossomandi Auto (Codice: ${fullCode}).\n\nEcco la tua nuova password temporanea:\n🔑 Nuova Password: ${tempPass}\n📧 Email (Utente): ${targetEmail}\n🔗 Link Applicazione (Accedi o Installa): ${appUrl}\n\nDopo aver effettuato l'accesso, potrai cambiare la password in qualsiasi momento cliccando su "🔑 Password" nella tua area riservata.\n\nCordiali saluti,\nRossomandi Auto S.R.L.`;
+    const mailBody = `Gentile ${u.name || 'Utente'},\n\nHai richiesto il ripristino della password per il tuo account Rossomandi Auto.\n\nEcco la tua nuova password per accedere:\n🔑 Nuova Password: ${tempPass}\n📧 Email: ${targetEmail}\n🔗 Link Applicazione: ${appUrl}\n\nCordiali saluti,\nRossomandi Auto S.R.L.`;
 
     await transporter.sendMail({
       from: '"Rossomandi Auto" <preventivi@rossomandi.com>',
       to: targetEmail,
-      subject: `Recupero Password Segnalatore Rossomandi Auto (${fullCode})`,
+      subject: 'Recupero Password Rossomandi Auto',
       text: mailBody
     });
 
@@ -3074,7 +3110,7 @@ app.post('/api/segnalatori/forgot-password', async (req, res) => {
       message: `Abbiamo inviato una nuova password all'indirizzo email ${targetEmail}!`
     });
   } catch (err) {
-    console.error('Error resetting segnalatore password:', err.message);
+    console.error('Error resetting password:', err.message);
     res.status(500).json({ error: 'Errore durante l\'invio dell\'email di recupero: ' + err.message });
   }
 });

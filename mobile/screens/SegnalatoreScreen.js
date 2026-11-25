@@ -395,15 +395,6 @@ export default function SegnalatoreScreen({ navigation, route }) {
             </TouchableOpacity>
           )}
 
-          {!isAdminPreview && (
-            <TouchableOpacity
-              style={styles.passBtn}
-              onPress={() => setPassModalVisible(true)}
-            >
-              <Text style={styles.passBtnText}>🔑 Password</Text>
-            </TouchableOpacity>
-          )}
-
           <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
             <Text style={styles.logoutBtnText}>
               {isAdminPreview ? '← Lista Admin' : '🚪 Esci'}
