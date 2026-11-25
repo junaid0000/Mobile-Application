@@ -86,9 +86,17 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Health check endpoint
 app.get('/api/health', (req, res) => res.json({ status: 'ok', message: 'Rossomandi Backend Running' }));
 
-// Static files for web application
+// Static files for web application (with no-cache on index.html so browser never serves stale app bundles!)
 const PUBLIC_DIR = path.join(__dirname, 'public');
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 
 
